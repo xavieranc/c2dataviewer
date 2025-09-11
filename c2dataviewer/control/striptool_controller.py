@@ -15,7 +15,7 @@ from ..view import *
 from .scope_controller_base import ScopeControllerBase
 from ..view.scope_display import PlotChannel as ScopePlotChannel
 from pyqtgraph.parametertree import Parameter
-from .striptool_config import StriptoolConfig
+from .striptoolconfig import StripToolConfigure
 from .pvconfig import PvConfig
 from pyqtgraph.Qt import QtCore
 
@@ -90,9 +90,8 @@ class StripToolController(ScopeControllerBase):
                  **kwargs):
 
         super().__init__(widget, model, parameters, warning, **kwargs)
-        st_config = StriptoolConfig(cfg, **kwargs)
         self._pvedit_dialog = PvEditDialogController(pvedit_widget, model,
-                                                     default_proto=st_config.default_proto)
+                                                     default_proto=cfg.default_proto)
         self._win.editPvButton.clicked.connect(self._on_pvedit_click)
         
         # Signal to update status when connection changes
@@ -110,7 +109,7 @@ class StripToolController(ScopeControllerBase):
 
         self._win.graphicsWidget.enable_sampling_mode(True)
         self._pvedit_dialog.set_completion_callback(self.pv_edit_callback)
-        self._init_pvlist(st_config.pvs.values())
+        self._init_pvlist(cfg.pvs.values())
 
         self.start_plotting()
         

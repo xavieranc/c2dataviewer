@@ -13,10 +13,10 @@ from pyqtgraph.Qt import QtWidgets
 from pyqtgraph.parametertree import Parameter
 
 from c2dataviewer.model import DataSource as DataReceiver
-from c2dataviewer.view import StripToolConfigure
+from c2dataviewer.control.striptoolconfig import StripToolConfigure
 from c2dataviewer.striptool import StripToolWindow, WarningDialog, PvEditDialog
 
-from c2dataviewer.control.striptool_config import StriptoolConfig
+from c2dataviewer.control.striptoolconfig import StripToolConfigure
 from c2dataviewer.control.striptool_controller import StripToolController
 from c2dataviewer.control.pvconfig import PvConfig
 
@@ -49,7 +49,7 @@ class TestStriptoolController(unittest.TestCase):
             cfgtext = self.DEFAULT_CFG
         cfg = ConfigParser()
         cfg.read_string(cfgtext)
-        self.cfg = cfg
+        self.cfg = StripToolConfigure(cfg)
         
         self.striptool_controller = StripToolController(
             self.window,  self.model, self.pvedit_dialog, self.warning, self.parameters, self.cfg)

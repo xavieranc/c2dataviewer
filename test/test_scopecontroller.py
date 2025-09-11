@@ -22,7 +22,7 @@ from pyqtgraph.Qt import QtWidgets
 from pyqtgraph.parametertree import Parameter
 
 from c2dataviewer.model import DataSource as DataReceiver
-from c2dataviewer.view import Configure
+from c2dataviewer.control.scopeconfig import Configure
 from c2dataviewer.scope import ScopeWindow, WarningDialog
 from c2dataviewer.control import ScopeController
 

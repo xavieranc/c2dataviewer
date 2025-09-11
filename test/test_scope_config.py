@@ -6,7 +6,7 @@ SPDX-License-Identifier: EPICS
 
 import unittest
 from configparser import ConfigParser
-from c2dataviewer.view.scopeconfig import Configure
+from c2dataviewer.control.scopeconfig import Configure
 
 
 class TestScopeConfig(unittest.TestCase):

@@ -4,6 +4,4 @@ in the file LICENSE that is included with this distribution.
 SPDX-License-Identifier: EPICS
 """
 
-from .scopeconfig import Configure
-from .striptoolconfig import StripToolConfigure
 from .image_display import ImagePlotWidget

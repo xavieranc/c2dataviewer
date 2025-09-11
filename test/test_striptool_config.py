@@ -6,10 +6,8 @@ SPDX-License-Identifier: EPICS
 
 import unittest
 from configparser import ConfigParser
-from c2dataviewer.control.striptool_config import StriptoolConfig
+from c2dataviewer.control.striptoolconfig import StripToolConfigure
 from c2dataviewer.control.pvconfig import PvConfig
-from c2dataviewer.view import StripToolConfigure
-
 
 class TestStriptoolConfig(unittest.TestCase):
     def test_config(self):
@@ -23,7 +21,7 @@ Chan2.Color = #0000FF
 """
         parser = ConfigParser()
         parser.read_string(raw)
-        cfg = StriptoolConfig(parser)
+        cfg = StripToolConfigure(parser)
         expected = {
             'Foo:Bar': PvConfig('Foo:Bar', '#000000', 'ca'),
             'Bar:Baz': PvConfig('Bar:Baz', '#0000FF', 'pva')
