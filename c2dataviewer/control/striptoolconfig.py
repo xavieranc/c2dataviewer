@@ -5,8 +5,9 @@ SPDX-License-Identifier: EPICS
 """
 from .pvconfig import PvConfig
 import re
-from ..model import *
 from .scope_config_base import ScopeConfigureBase
+from .config import Striptool
+import logging
 
 def parse_pv(val):
     pvname = None
@@ -24,32 +25,27 @@ class StripToolConfigure(ScopeConfigureBase):
         self.pvs = {}
 
         try:
-            cfg = params['STRIPTOOL']
+            cfg = self.params.cfg['STRIPTOOL']
         except:
             return
-        
-        self.default_proto = make_protocol(cfg.get('DefaultProtocol', 'ca'))
 
-        cfgpvs = {}
-        for k, v in cfg.items():
-            if bool(re.match('chan', k, re.I)):
-                ch, param = k.split('.')
-                chcfg = cfgpvs.get(ch, PvConfig())
+        self.default_proto = self.params.get(Striptool.DEFAULT_PROTOCOL, default='ca')
 
-                if param == 'pv':
+        cfgpvs = self.params.get_channel_config(is_striptool=True)
+        for cfg in cfgpvs:
+            chcfg = PvConfig()
+            for k, v in cfg.items():
+                if k == 'pv':
                     pvname, proto = parse_pv(v)
                     chcfg.pvname = pvname
                     if proto is None:
                         proto = self.default_proto
                     chcfg.set_proto(proto)
-                    
-                elif param == 'color':
+                elif k == 'color':
                     chcfg.color = str(v)
-                    
-                cfgpvs[ch] = chcfg
-
-        for p in cfgpvs.values():
-            self.pvs[p.pvname] = p
+            
+            if chcfg.pvname:
+                self.pvs[chcfg.pvname] = chcfg
             
         pvs = kwargs.get('pv')
         if pvs:
@@ -81,16 +77,8 @@ class StripToolConfigure(ScopeConfigureBase):
         return display
     
     def parse(self):
-        try:
-            acquisition = self.assemble_acquisition(self.params["ACQUISITION"])
-        except KeyError:
-            acquisition = self.assemble_acquisition()
-
-        try:
-            display = self.assemble_display(self.params["DISPLAY"])
-        except KeyError:
-            display = self.assemble_display()
-            
+        acquisition = self.assemble_acquisition()
+        display = self.assemble_display()            
         statistics = self.assemble_statistics()
         # line up in order
         paramcfg = [acquisition, display, statistics]

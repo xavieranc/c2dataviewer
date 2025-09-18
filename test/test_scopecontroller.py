@@ -35,6 +35,15 @@ class TestImageDisplay(unittest.TestCase):
     Units tests for the scope controllers.
     """
 
+    @classmethod
+    def setUpClass(cls):
+        """
+        Set up QApplication for all tests in this class.
+        """
+        cls.app = QtWidgets.QApplication.instance()
+        if cls.app is None:
+            cls.app = QtWidgets.QApplication(sys.argv)
+
     def setUp(self):
         """
         Build the environment for each unit test case.
@@ -123,9 +132,124 @@ class TestImageDisplay(unittest.TestCase):
         self.scope_controller.monitor_callback({ 'x' : [10]*100})
         bufval = self.scope_controller.parameters.child("Acquisition").child("Buffer (Samples)").value()
         self.assertEqual(bufval, 100)
-        
+
         #set to object unit
         self.scope_controller.set_buffer_unit('Objects')
         bufval = self.scope_controller.parameters.child("Acquisition").child("Buffer (Objects)").value()
         self.assertEqual(bufval, 1)
+
+    def test_config_file_settings(self):
+        """
+        Test that settings from config file are properly loaded into controller.
+        """
+        config_str = """
+        [SCOPE]
+        DefaultProtocol = ca
+        AUTOSCALE = True
+
+        [DISPLAY]
+        MODE = fft
+        AVERAGE = 5
+        REFRESH = 200
+
+        [ACQUISITION]
+        BUFFER = 500
+        """
+        parser = configparser.ConfigParser()
+        parser.read_string(config_str)
+
+        # Create new window with config
+        window = ScopeWindow()
+        configure = Configure(parser)
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Verify settings are loaded
+        self.assertTrue(parameters.child("Display").child("Autoscale").value())
+        self.assertEqual(parameters.child("Display").child("Mode").value(), 'fft')
+        self.assertEqual(parameters.child("Display").child("Exp moving avg").value(), 5)
+        self.assertEqual(parameters.child("Display").child("Refresh").value(), 0.2)
+        self.assertEqual(parameters.child("Acquisition").child("Buffer (Samples)").value(), 500)
+
+    def test_kwarg_settings(self):
+        """
+        Test that keyword arguments are properly used in controller setup.
+        """
+        parser = configparser.ConfigParser()
+        parser.read_string("[SCOPE]\nDefaultProtocol = ca")
+
+        # Create configuration with kwargs
+        window = ScopeWindow()
+        configure = Configure(parser, arrayid='TestArray', xaxes='TestXAxis')
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Verify kwarg settings are used
+        self.assertEqual(parameters.child("Config").child("ArrayId").value(), 'TestArray')
+        self.assertEqual(parameters.child("Config").child("X Axes").value(), 'TestXAxis')
+
+    def test_kwarg_overrides_config(self):
+        """
+        Test that keyword arguments override config file settings.
+        """
+        config_str = """
+        [SCOPE]
+        DefaultProtocol = ca
+
+        [CONFIG]
+        ARRAYID = ConfigArrayId
+        XAXES = ConfigXAxis
+        """
+        parser = configparser.ConfigParser()
+        parser.read_string(config_str)
+
+        # Create configuration with kwargs that override config
+        window = ScopeWindow()
+        configure = Configure(parser, arrayid='KwargArrayId', xaxes='KwargXAxis')
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Verify kwargs override config file values
+        self.assertEqual(parameters.child("Config").child("ArrayId").value(), 'KwargArrayId')
+        self.assertEqual(parameters.child("Config").child("X Axes").value(), 'KwargXAxis')
+
+    def test_pv_kwarg(self):
+        """
+        Test that PV can be set via keyword argument.
+        """
+        parser = configparser.ConfigParser()
+        parser.read_string("[SCOPE]\nDefaultProtocol = ca")
+
+        # Create configuration with PV kwarg
+        window = ScopeWindow()
+        configure = Configure(parser, pv={'test': 'TEST:PV:NAME'})
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Verify PV kwarg is used
+        self.assertEqual(parameters.child("Acquisition").child("PV").value(), 'TEST:PV:NAME')
         

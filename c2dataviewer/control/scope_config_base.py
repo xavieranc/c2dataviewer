@@ -1,3 +1,5 @@
+from .config import Parser, Scope
+
 """
 C2 DATA VIEWER is distributed subject to a Software License Agreement found
 in the file LICENSE that is included with this distribution.
@@ -6,7 +8,7 @@ SPDX-License-Identifier: EPICS
 
 class ScopeConfigureBase:
     def __init__(self, params, **kwargs):
-        self.params = params
+        self.params = Parser(params)
         self.default_trigger = kwargs.get("trigger", None)
 
     def add_source_aquisition_props(self, children, section):
@@ -26,11 +28,7 @@ class ScopeConfigureBase:
 
         children = []
 
-        buffer_size = None
-        try:
-            buffer_size = section["BUFFER"]
-        except:
-            pass
+        buffer_size = self.params.get(Scope.BUFFER)
         
         children += [
             {"name": "Freeze", "type": "bool", "value": False},
@@ -52,139 +50,49 @@ class ScopeConfigureBase:
         :return:
         """
         # If AUTOSCALE set in the app specific sections in the config file
-        autoscale = self.params.get(app_section_key, "AUTOSCALE", fallback=None)
+        autoscale = self.params.get(Scope.AUTOSCALE, default=default_autoscale)
+        display_mode = self.params.get(Scope.DISPLAY_MODE, default='normal')
+        fft_filter = self.params.get(Scope.FFT_FILTER, default='none')
+        n_average = self.params.get(Scope.AVERAGE, default=1)
+        n_average = n_average if n_average > 0 else 1
+        single_axis = self.params.get(Scope.SINGLE_AXIS, default=True)
+        histogram = self.params.get(Scope.HISTOGRAM, default=False)
+        n_binning = self.params.get(Scope.NBIN, default=100)
+        refresh = self.params.get(Scope.REFRESH, default=100)
 
-        if autoscale is None:
-            # Else if AUTOSCALE set in the DISPLAY specific section in the config file
-            autoscale = self.params.get("DISPLAY", "AUTOSCALE", fallback=None)
+        display = {"name": "Display", "type": "group", "expanded": True,
+                   "children": [
+                       {"name": "Mode", "type": "list", "limits": {
+                           "Normal": "normal",
+                           "FFT": "fft",
+                           "PSD": "psd",
+                           "Diff": "diff",    
+                           "Autocorrelation FFT": "autocorrelate_fft",               
+                       }, "value": display_mode},
+                       {"name": "FFT filter", "type": "list", "limits": {
+                           "None" : "none",
+                           "Hamming" : "hamming"
+                       }, "value": fft_filter},
+                       {"name": "Exp moving avg", "type": "int", "value": n_average, "limits" : (1, 1e+10)},
+                       {"name": "Autoscale", "type": "bool", "value": autoscale},
+                       {"name": "Single axis", "type": "bool", "value": single_axis},
+                       {"name": "Histogram", "type": "bool", "value": histogram},
+                       {"name": "Num Bins", "type": "int", "value": n_binning},
+                       {"name": "Refresh", "type": "float", "value": refresh / 1000., "siPrefix": True, "suffix": "s"},
+                   ]}
         
-        # If AUTOSCALE not set anywhere in the config file, set default value
-        if autoscale is None:
-            autoscale = default_autoscale
-        elif str(autoscale).upper().strip() in ["TRUE"]:
-            autoscale = True
-        else:
-            autoscale = False
-
-        if section is None:
-            display = {"name": "Display", "type": "group",
-                       "expanded": True,
-                       "children": [
-                {"name": "Mode", "type": "list", "limits": {
-                    "Normal": "normal",
-                    "FFT": "fft",
-                    "PSD": "psd",
-                    "Diff": "diff",   
-                    "Autocorrelation FFT": "autocorrelate_fft",                 
-                }, "value": "Normal"},
-                {"name": "FFT filter", "type": "list", "limits": {
-                    "None" : "none",
-                    "Hamming" : "hamming"
-                }, "value": "None"},
-                {"name": "Exp moving avg", "type": "int", "value": 1, "limits" : (1, 1e+10)},
-                {"name": "Autoscale", "type": "bool", "value": autoscale},
-                {"name": "Single axis", "type": "bool", "value": True},
-                {"name": "Histogram", "type": "bool", "value": False},
-                {"name": "Num Bins", "type": "int", "value": 100},
-                {"name": "Refresh", "type": "float", "value": 0.1, "siPrefix": True, "suffix": "s"},
-            ]}
-        else:
-            display_mode = section.get("MODE", "normal").lower().strip()
-            if display_mode not in ["normal", "fft", "psd", "diff", "autocorrelate_fft"]:
-                display_mode = "normal"
-
-            fft_filter = section.get("FFT_FILTER", None)
-            if fft_filter is not None:
-                if fft_filter.lower().strip() in ["none", "hamming"]:
-                    fft_filter = fft_filter.lower().strip().capitalize()
-                else:
-                    # Disable filter if config not valid
-                    fft_filter = "none"
-
-            try:
-                n_average = section.getint("AVERAGE", 1)
-                n_average = n_average if n_average > 0 else 1
-            except ValueError:
-                n_average = 1
-
-            single_axis = section.get("SINGLE_AXIS", None)
-            if single_axis is not None:
-                if single_axis.upper().strip() in ["FALSE"]:
-                    single_axis = False
-                else:
-                    single_axis = True
-            else:
-                single_axis = True
-
-            histogram = section.get("HISTOGRAM", None)
-            if histogram is not None:
-                if histogram.upper().strip() in ["TRUE"]:
-                    histogram = True
-                else:
-                    # set auto scale value to None if a "None" string comes from configuration
-                    histogram = False
-            else:
-                histogram = False
-
-            try:
-                n_binning = section.getint("N_BIN", 100)
-            except ValueError:
-                n_binning = 1
-
-            try:
-                refresh = section.getfloat("REFRESH", 100)
-            except ValueError:
-                refresh = 1
-
-            display = {"name": "Display", "type": "group", "expanded": True,
-                       "children": [
-                {"name": "Mode", "type": "list", "limits": {
-                    "Normal": "normal",
-                    "FFT": "fft",
-                    "PSD": "psd",
-                    "Diff": "diff",    
-                    "Autocorrelation FFT": "autocorrelate_fft",               
-                }, "value": display_mode},
-                {"name": "FFT filter", "type": "list", "limits": {
-                    "None" : "none",
-                    "Hamming" : "hamming"
-                }, "value": fft_filter},
-                {"name": "Exp moving avg", "type": "int", "value": n_average, "limits" : (1, 1e+10)},
-                {"name": "Autoscale", "type": "bool", "value": autoscale},
-                {"name": "Single axis", "type": "bool", "value": single_axis},
-                {"name": "Histogram", "type": "bool", "value": histogram},
-                {"name": "Num Bins", "type": "int", "value": n_binning},
-                {"name": "Refresh", "type": "float", "value": refresh / 1000., "siPrefix": True, "suffix": "s"},
-            ]}
-
         return display
-
+    
 
     def assemble_trigger(self, section=None):
-        trigger_pv = self.default_trigger
-        trigger_mode = 'none'
+        trigger_pv = self.params.get(Scope.TRIGGER, self.default_trigger)
+        if trigger_pv is not None and trigger_pv.upper().strip() == "NONE":
+            # set trigger PV value to None if a "None" string comes from configuration
+            trigger_pv = None
 
-        if section:
-            # Trigger PV name and protocol, which comes with format of proto://pv_name
-            # the protocol is either ca:// for channel access or pva:// for pvAccess
-            trigger_pv = section.get("TRIGGER", None)
-            if self.default_trigger is not None:
-                trigger_pv = self.default_trigger
-
-            if trigger_pv is not None and trigger_pv.upper().strip() == "NONE":
-                # set trigger PV value to None if a "None" string comes from configuration
-                trigger_pv = None
-            if trigger_pv is None:
-                trigger_mode = None
-            else:
-                trigger_mode = section.get("TRIGGER_MODE", None)
-            if trigger_mode is not None:
-                trigger_mode = trigger_mode.lower().strip()
-                if trigger_mode == 'off':
-                    trigger_mode = 'none'
-            else:
-                trigger_mode = 'none'
-        
+        trigger_mode = self.params.get(Scope.TRIGGER_MODE, 'none')
+        if trigger_mode == 'off':
+            trigger_mode = 'none'
 
         config_expanded = True if trigger_mode != "none" else False
 
