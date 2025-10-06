@@ -18,6 +18,7 @@ from pyqtgraph.parametertree import Parameter
 from .striptoolconfig import StripToolConfigure
 from .pvconfig import PvConfig
 from pyqtgraph.Qt import QtCore
+from .config import Serializer, Striptool, AppType
 
 class PvScopeItem:
     def __init__(self, props, controller):
@@ -110,7 +111,6 @@ class StripToolController(ScopeControllerBase):
         self._win.graphicsWidget.enable_sampling_mode(True)
         self._pvedit_dialog.set_completion_callback(self.pv_edit_callback)
         self._init_pvlist(cfg.pvs.values())
-
         self.start_plotting()
         
     def _init_pvlist(self, pvconfig):
@@ -237,6 +237,53 @@ class StripToolController(ScopeControllerBase):
                 si.channel.axis_location = data
 
         self._setup_plot()
+
+
+    def serialize(self, cfile):
+        """
+        Serialize the current striptool configuration to an IO object.
+
+        :param cfile: IO object (file-like) to write configuration to
+        """
+
+        serializer = Serializer()
+
+        # Write app identifier
+        serializer.set_app(AppType.STRIPTOOL)
+
+        # Write striptool-specific settings
+        if hasattr(self._pvedit_dialog, 'default_proto') and self._pvedit_dialog.default_proto:
+            serializer.set(Striptool.DEFAULT_PROTOCOL, self._pvedit_dialog.default_proto)
+
+        # Serialize base scope configuration (Display, Acquisition, Trigger)
+        self.serialize_scope_config(serializer)
+
+        # Serialize striptool-specific acquisition settings
+        sample_mode = self.parameters.child("Acquisition", "Sample Mode").value()
+        serializer.set(Striptool.SAMPLEMODE, str(sample_mode))
+
+        # Serialize PV/channel configurations
+        chan_cfgs = []
+        for pvname, si in self.pvdict.items():
+            pv_str = pvname
+            # Always add protocol prefix if not already present
+            if si.proto:
+                # Convert ProviderType enum to string (e.g., "ProviderType.PVA" -> "pva")
+                proto_str = str(si.proto).split('.')[-1].lower()
+                # Check if PV already has protocol prefix
+                if '://' not in pvname:
+                    pv_str = f'{proto_str}://{pvname}'
+
+            chan_cfg = {
+                'pv': pv_str,
+                'color': si.channel.color
+            }
+            chan_cfgs.append(chan_cfg)
+
+        serializer.write_channels('STRIPTOOL', chan_cfgs)
+
+        # Write to file
+        serializer.write(cfile)
 
     def set_sampling_mode(self, val):
         self._win.graphicsWidget.enable_sampling_mode(val)

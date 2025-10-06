@@ -4,6 +4,15 @@ from configparser import ConfigParser
 import re
 import logging
 
+
+class AppType(Enum):
+    SCOPE = "scope"
+    IMAGE = "image"
+    STRIPTOOL = "striptool"
+
+    def __str__(self):
+        return self.value
+
 class Scope(Enum):
     BUFFER = auto()
     BUFFER_UNIT = auto()
@@ -30,15 +39,15 @@ class Scope(Enum):
 
 class Striptool(Enum):
     DEFAULT_PROTOCOL = auto()
-    
+    SAMPLEMODE = auto()
     
 Field = namedtuple('Field', ['loc', 'type'])
-
+MultiLoc = namedtuple('MultiLoc', ['sections', 'write_section', 'field'])
 
 _schema = {
     Scope.BUFFER : Field(loc=('ACQUISITION', 'BUFFER'),type=int),
     Scope.BUFFER_UNIT: Field(loc=('ACQUISITION', 'BUFFERUNIT'),type=['samples', 'objects']),
-    Scope.AUTOSCALE: Field(loc=[ ('STRIPTOOL', 'AUTOSCALE'),('SCOPE', 'AUTOSCALE'), ('DISPLAY', 'AUTOSCALE')], type=bool),
+    Scope.AUTOSCALE: Field(loc=MultiLoc(['STRIPTOOL', 'SCOPE', 'DISPLAY'], 'DISPLAY', 'AUTOSCALE'), type=bool),
     Scope.DISPLAY_MODE: Field(loc=('DISPLAY', 'MODE'), type=['normal', 'fft', 'psd', 'diff', 'autocorrelate_fft']),
     Scope.FFT_FILTER: Field(loc=('DISPLAY', 'FFT_FILTER'), type=['none', 'hamming']),
     Scope.AVERAGE: Field(loc=('DISPLAY', 'AVERAGE'), type=int),
@@ -59,7 +68,8 @@ _schema = {
     Scope.MINORTICKS: Field(loc=('CONFIG', 'MINORTICKS'), type=int),
     Scope.EXTRA_DISPLAY_FIELDS: Field(loc=('CONFIG', 'EXTRADISPLAYFIELDS'), type=list),
     Scope.MOUSE_OVER_DISPLAY_LOCATION: Field(loc=('CONFIG', 'EXTRADISPLAYLOCATION'), type=['top_right', 'bottom_right', 'bottom_left']),
-    Striptool.DEFAULT_PROTOCOL: Field(loc=('STRIPTOOL', 'DEFAULTPROTOCOL'), type=str)
+    Striptool.DEFAULT_PROTOCOL: Field(loc=('STRIPTOOL', 'DEFAULTPROTOCOL'), type=str),
+    Striptool.SAMPLEMODE: Field(loc=('ACQUISITION', 'SAMPLEMODE'), type=str)
 }
 
 class Parser:
@@ -110,8 +120,9 @@ class Parser:
 
         loc=fielddef.loc
         
-        if isinstance(loc, list):
-            for l in loc:
+        if isinstance(loc, MultiLoc):
+            for s in loc.sections:
+                l = (s, loc.field)
                 val = self.__get(l, fielddef, None)
                 if val is not None:
                     return val
@@ -155,9 +166,50 @@ class Serializer:
         except Exception as e:
             raise KeyError('Invalid configuration key') from e
 
-        loc=fielddef.loc        
-        self.cfg.set(loc[0], loc[1], value)
+        loc=fielddef.loc
+        if isinstance(loc, MultiLoc):
+            section = loc.write_section
+            option = loc.field
+        else:
+            section, option = loc[0], loc[1]
 
-    
+        # Ensure section exists
+        if not self.cfg.has_section(section):
+            self.cfg.add_section(section)
+
+        self.cfg.set(section, option, str(value))
+
+    def set_app(self, app: AppType):
+        self.__set_raw('DEFAULT', 'APP', str(app).upper())
+
+    def __set_raw(self, section, option, value):
+        '''
+        Set a configuration value directly without schema validation.
+        Useful for app-specific or channel-specific settings.
+        '''
+        # DEFAULT section is special in ConfigParser and cannot be added
+        if section != 'DEFAULT' and not self.cfg.has_section(section):
+            self.cfg.add_section(section)
+        self.cfg.set(section, option, str(value))
+
+    def write_channels(self, section: str, chan_cfgs: list[dict]):
+        '''
+        Write channel configurations to a specific section.
+
+        section: Section name to write channels to (e.g., 'STRIPTOOL', 'CHANNELS')
+        chan_cfgs: List of channel configs, where a channel config
+                   is a dictionary of channel fields
+        '''
+        if not self.cfg.has_section(section):
+            self.cfg.add_section(section)
+
+        i = 1
+        for cfg in chan_cfgs:
+            prefix = f'chan{i}.'
+            for k, v in cfg.items():
+                key = f'{prefix}{k.lower()}'
+                self.cfg.set(section, key, str(v))
+            i += 1
+
     def write(self, cfile):
         self.cfg.write(cfile)

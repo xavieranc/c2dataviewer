@@ -252,4 +252,175 @@ class TestImageDisplay(unittest.TestCase):
 
         # Verify PV kwarg is used
         self.assertEqual(parameters.child("Acquisition").child("PV").value(), 'TEST:PV:NAME')
-        
+
+    def test_serialize(self):
+        """
+        Test that serialize function writes proper configuration to file.
+        """
+        from io import StringIO
+        from configparser import ConfigParser
+
+        # Set up controller with specific settings
+        config_str = """
+        [SCOPE]
+        DefaultProtocol = pva
+
+        [DISPLAY]
+        MODE = fft
+        AVERAGE = 10
+        AUTOSCALE = True
+        REFRESH = 500
+
+        [ACQUISITION]
+        PV = TEST:SCOPE:PV
+        BUFFER = 1000
+        BUFFERUNIT = Samples
+
+        [CONFIG]
+        ARRAYID = myArrayId
+        XAXES = myXAxis
+        MAJORTICKS = 5
+        MINORTICKS = 2
+        """
+        parser = ConfigParser()
+        parser.read_string(config_str)
+
+        window = ScopeWindow()
+        configure = Configure(parser)
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Set limits for Field parameters so they can accept custom values
+        field_limits = ["None", "field1", "field2"]
+        controller.parameters.child("Channel 1", "Field").setLimits(field_limits)
+        controller.parameters.child("Channel 2", "Field").setLimits(field_limits)
+
+        # Set some channel fields in parameters (serialize reads from parameters)
+        controller.parameters.child("Channel 1", "Field").setValue("field1")
+        controller.parameters.child("Channel 1", "DC offset").setValue(5.0)
+        controller.parameters.child("Channel 2", "Field").setValue("field2")
+
+        # Serialize to StringIO
+        output = StringIO()
+        controller.serialize(output)
+
+        # Read back the serialized config
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
+
+        # Verify app type
+        self.assertEqual(result_cfg.get('DEFAULT', 'APP'), 'SCOPE')
+
+        # Verify Display settings
+        self.assertEqual(result_cfg.get('DISPLAY', 'mode'), 'fft')
+        self.assertEqual(result_cfg.get('DISPLAY', 'average'), '10')
+        self.assertEqual(result_cfg.get('DISPLAY', 'autoscale'), 'True')
+        self.assertEqual(result_cfg.get('DISPLAY', 'refresh'), '500')
+
+        # Verify Acquisition settings
+        self.assertEqual(result_cfg.get('ACQUISITION', 'pv'), 'TEST:SCOPE:PV')
+        self.assertEqual(result_cfg.get('ACQUISITION', 'buffer'), '1000')
+        self.assertEqual(result_cfg.get('ACQUISITION', 'bufferunit'), 'Samples')
+
+        # Verify Config settings
+        self.assertTrue(result_cfg.has_section('CONFIG'))
+        self.assertEqual(result_cfg.get('CONFIG', 'majorticks'), '5')
+        self.assertEqual(result_cfg.get('CONFIG', 'minorticks'), '2')
+        # ArrayId and XAxes may not serialize if they're not valid field names
+
+        # Verify channel configurations
+        self.assertTrue(result_cfg.has_section('CHANNELS'))
+        self.assertEqual(result_cfg.get('CHANNELS', 'chan1.field'), 'field1')
+        self.assertEqual(result_cfg.get('CHANNELS', 'chan1.dcoffset'), '5.0')
+        self.assertEqual(result_cfg.get('CHANNELS', 'chan2.field'), 'field2')
+
+    def test_serialize_minimal_config(self):
+        """
+        Test serialize with minimal configuration (default settings).
+        """
+        from io import StringIO
+        from configparser import ConfigParser
+
+        # Set up controller with minimal config
+        parser = ConfigParser()
+        parser.read_string("[SCOPE]\nDefaultProtocol = ca")
+
+        window = ScopeWindow()
+        configure = Configure(parser)
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Serialize to StringIO
+        output = StringIO()
+        controller.serialize(output)
+
+        # Read back the serialized config
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
+
+        # Verify app type
+        self.assertEqual(result_cfg.get('DEFAULT', 'APP'), 'SCOPE')
+
+        # Verify Display section exists (should have default values)
+        self.assertTrue(result_cfg.has_section('DISPLAY'))
+
+        # Verify Acquisition section exists
+        self.assertTrue(result_cfg.has_section('ACQUISITION'))
+
+    def test_serialize_with_buffer_objects(self):
+        """
+        Test serialize with buffer unit set to Objects.
+        """
+        from io import StringIO
+        from configparser import ConfigParser
+
+        # Set up controller with buffer unit as Objects in config
+        config_str = """
+        [SCOPE]
+        DefaultProtocol = pva
+
+        [ACQUISITION]
+        BUFFERUNIT = Objects
+        BUFFER = 50
+        """
+        parser = ConfigParser()
+        parser.read_string(config_str)
+
+        window = ScopeWindow()
+        configure = Configure(parser)
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        controller = ScopeController(
+            widget=window, model=model, parameters=parameters, WARNING=warning)
+
+        # Serialize to StringIO
+        output = StringIO()
+        controller.serialize(output)
+
+        # Read back the serialized config
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
+
+        # Verify buffer unit and size
+        self.assertEqual(result_cfg.get('ACQUISITION', 'bufferunit'), 'Objects')
+        self.assertEqual(result_cfg.get('ACQUISITION', 'buffer'), '50')
+

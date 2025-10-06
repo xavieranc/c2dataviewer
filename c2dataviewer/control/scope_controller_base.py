@@ -9,6 +9,8 @@ import pyqtgraph
 import pvaccess as pva
 from ..model import ConnectionState
 import math
+from .config import Scope
+from PyQt5 import QtWidgets
 
 class ScopeControllerBase:
     def __init__(self, widget, model, parameters, warning, channels=[], **kwargs):
@@ -48,6 +50,10 @@ class ScopeControllerBase:
         self.status_timer = pyqtgraph.QtCore.QTimer()
         self.status_timer.timeout.connect(self.update_status)
         self.status_timer.start(1000)
+
+        # Setup save configuration button
+        self._win.saveConfigButton.clicked.connect(self._on_save_config_action)
+
 
     def set_display_mode(self, val):
         self._win.graphicsWidget.set_display_mode(val)
@@ -340,5 +346,109 @@ class ScopeControllerBase:
                 newsize = math.ceil(newsize / roundunit) * roundunit
 
                 self.update_buffer_samples(newsize)
-            
-        
+
+    def serialize_scope_config(self, serializer):
+        """
+        Serialize scope base configuration to a Serializer instance.
+        This includes Display, Acquisition, and Trigger settings.
+
+        :param serializer: config.Serializer instance to write to
+        """
+        # Serialize Display settings
+        display_mode = self.parameters.child("Display", "Mode").value()
+        serializer.set(Scope.DISPLAY_MODE, display_mode)
+
+        fft_filter = self.parameters.child("Display", "FFT filter").value()
+        serializer.set(Scope.FFT_FILTER, fft_filter)
+
+        average = self.parameters.child("Display", "Exp moving avg").value()
+        serializer.set(Scope.AVERAGE, int(average))
+
+        autoscale = self.parameters.child("Display", "Autoscale").value()
+        serializer.set(Scope.AUTOSCALE, autoscale)
+
+        single_axis = self.parameters.child("Display", "Single axis").value()
+        serializer.set(Scope.SINGLE_AXIS, single_axis)
+
+        histogram = self.parameters.child("Display", "Histogram").value()
+        serializer.set(Scope.HISTOGRAM, histogram)
+
+        n_bin = self.parameters.child("Display", "Num Bins").value()
+        serializer.set(Scope.NBIN, int(n_bin))
+
+        refresh = self.parameters.child("Display", "Refresh").value()
+        # Convert from seconds to milliseconds
+        serializer.set(Scope.REFRESH, int(refresh * 1000))
+
+        # Serialize Acquisition settings
+        # Try to get buffer unit (scope-specific)
+        try:
+            buffer_unit = self.parameters.child("Acquisition", "Buffer Unit").value()
+            if buffer_unit:
+                serializer.set(Scope.BUFFER_UNIT, buffer_unit)
+                # Get buffer size based on buffer unit
+                buffer_size = self.parameters.child("Acquisition", f"Buffer ({buffer_unit})").value()
+                if buffer_size:
+                    serializer.set(Scope.BUFFER, int(buffer_size))
+        except:
+            # If Buffer Unit doesn't exist, fall back to Buffer (Samples)
+            try:
+                buffer_samples = self.parameters.child("Acquisition", "Buffer (Samples)").value()
+                if buffer_samples:
+                    serializer.set(Scope.BUFFER, int(buffer_samples))
+            except:
+                pass
+
+        # freeze = self.parameters.child("Acquisition", "Freeze").value()
+        # Freeze is not in schema, but we can document it if needed
+
+        # Serialize Trigger settings
+        try:
+            trigger_pv = self.parameters.child("Trigger", "PV").value()
+            if trigger_pv:
+                serializer.set(Scope.TRIGGER, trigger_pv)
+
+            trigger_mode = self.parameters.child("Trigger", "Mode").value()
+            serializer.set(Scope.TRIGGER_MODE, trigger_mode)
+        except:
+            # Trigger section may not exist in all scope types
+            pass
+
+
+    def _on_save_config_action(self):
+        """
+        Handle the save configuration action from the File menu.
+        Opens a file dialog and saves the current configuration.
+        """
+
+        # Open file dialog to get save location
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self._win,
+            "Save Configuration",
+            "",
+            "C2 Data Viewer Config (*.c2dv);;All Files (*)"
+        )
+
+        if file_path:
+            try:
+                # Ensure file has .c2dv extension
+                if not file_path.endswith('.c2dv'):
+                    file_path += '.c2dv'
+
+                # Save configuration
+                with open(file_path, 'w') as f:
+                    self.serialize(f)
+
+                # Show success message
+                QtWidgets.QMessageBox.information(
+                    self._win,
+                    "Success",
+                    f"Configuration saved to:\n{file_path}"
+                )
+            except Exception as e:
+                # Show error message
+                QtWidgets.QMessageBox.critical(
+                    self._win,
+                    "Error",
+                    f"Failed to save configuration:\n{str(e)}"
+                )

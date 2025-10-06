@@ -354,7 +354,110 @@ Chan2.PV = Ch2
         self.assertIn('NEW:PV:TWO', controller.pvdict)
         self.assertNotIn('INITIAL:PV', controller.pvdict)
 
+    def test_serialize(self):
+        """
+        Test that serialize function writes proper configuration to file.
+        """
+        from io import StringIO
+
+        config_str = """
+        [STRIPTOOL]
+        DefaultProtocol = pva
+        Chan1.PV = TEST:PV:ONE
+        Chan1.Color = #FF0000
+        Chan2.PV = ca://TEST:PV:TWO
+        Chan2.Color = #00FF00
+        Chan3.PV = TEST:PV:THREE
+        Chan3.Color = #0000FF
+        """
+        cfg = ConfigParser()
+        cfg.read_string(config_str)
+        configure = StripToolConfigure(cfg)
+
+        window = StripToolWindow()
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        pvedit_dialog = PvEditDialog()
+
+        controller = StripToolController(
+            window, model, pvedit_dialog, warning, parameters, configure)
+
+        # Serialize to StringIO
+        output = StringIO()
+        controller.serialize(output)
+
+        # Read back the serialized config
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
+
+        # Verify app type
+        self.assertEqual(result_cfg.get('DEFAULT', 'APP'), 'STRIPTOOL')
+
+        # Verify PVs are serialized with protocol prefixes
+        self.assertEqual(result_cfg.get('STRIPTOOL', 'chan1.pv'), 'pva://TEST:PV:ONE')
+        self.assertEqual(result_cfg.get('STRIPTOOL', 'chan1.color'), '#FF0000')
+
+        # Chan2 already has ca:// prefix in config, should keep it
+        self.assertEqual(result_cfg.get('STRIPTOOL', 'chan2.pv'), 'ca://TEST:PV:TWO')
+        self.assertEqual(result_cfg.get('STRIPTOOL', 'chan2.color'), '#00FF00')
+
+        self.assertEqual(result_cfg.get('STRIPTOOL', 'chan3.pv'), 'pva://TEST:PV:THREE')
+        self.assertEqual(result_cfg.get('STRIPTOOL', 'chan3.color'), '#0000FF')
+
+        # Verify scope config is serialized
+        self.assertTrue(result_cfg.has_section('DISPLAY'))
+        self.assertTrue(result_cfg.has_section('ACQUISITION'))
+
+        # Verify sample mode is serialized
+        self.assertTrue(result_cfg.has_option('ACQUISITION', 'SAMPLEMODE'))
+
+    def test_serialize_minimal_config(self):
+        """
+        Test serialize with minimal configuration (no PVs).
+        """
+        from io import StringIO
+
+        config_str = """
+        [STRIPTOOL]
+        DefaultProtocol = ca
+        """
+        cfg = ConfigParser()
+        cfg.read_string(config_str)
+        configure = StripToolConfigure(cfg)
+
+        window = StripToolWindow()
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        window.parameterPane.setParameters(parameters, showTop=False)
+
+        model = DataReceiver()
+        warning = WarningDialog(None)
+        pvedit_dialog = PvEditDialog()
+
+        controller = StripToolController(
+            window, model, pvedit_dialog, warning, parameters, configure)
+
+        # Serialize to StringIO
+        output = StringIO()
+        controller.serialize(output)
+
+        # Read back the serialized config
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
+
+        # Verify app type
+        self.assertEqual(result_cfg.get('DEFAULT', 'APP'), 'STRIPTOOL')
+
+        # Verify STRIPTOOL section exists even with no PVs
+        self.assertTrue(result_cfg.has_section('STRIPTOOL'))
+
 
 if __name__ == '__main__':
     unittest.main()
-        
+
