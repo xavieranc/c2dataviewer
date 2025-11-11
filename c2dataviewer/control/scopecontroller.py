@@ -117,7 +117,11 @@ class ScopeController(ScopeControllerBase):
                 
         child = self.parameters.child("Config").child("MO Disp Location")
         self._win.graphicsWidget.set_mouseover_display_location(child.value())
-        
+
+        # Apply Mouse Over setting from config
+        mouse_over = self.parameters.child("Display").child("Mouse Over").value()
+        self._win.graphicsWidget.set_enable_mouseover(mouse_over)
+
         if start:
             self.start_plotting()            
             
@@ -208,7 +212,12 @@ class ScopeController(ScopeControllerBase):
             self.set_xaxes(child.value())
                 
         child = self.parameters.child("Trigger").child("Data Time Field")
+        # Preserve current value before updating limits
+        current_value = child.value()
         child.setLimits(fdr)
+        # Restore value if it's still valid
+        if current_value != 'None' and current_value in fdr:
+            child.setValue(current_value)
         if child.value() != 'None':
             self._win.graphicsWidget.trigger.data_time_field = child.value()
         
@@ -520,6 +529,13 @@ class ScopeController(ScopeControllerBase):
         pv = self.parameters.child("Acquisition", "PV").value()
         if pv:
             serializer.set(Scope.PV, pv)
+
+        start = self.parameters.child("Acquisition", "Start").value()
+        serializer.set(Scope.CONNECT_ON_START, start)
+
+        # Serialize Display settings
+        mouse_over = self.parameters.child("Display", "Mouse Over").value()
+        serializer.set(Scope.MOUSE_OVER, mouse_over)
 
         # Serialize Config settings
         arrayid = self.parameters.child("Config", "ArrayId").value()

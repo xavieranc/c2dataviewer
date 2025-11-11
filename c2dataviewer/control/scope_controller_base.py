@@ -90,8 +90,14 @@ class ScopeControllerBase:
                 self._win.graphicsWidget.trigger.trigger_time_field = None
                 pvfields.insert(0, 'None')
                 child.show()
+                # Get current value before updating limits
+                current_value = child.value()
                 child.setLimits(pvfields)
-                child.setValue('None')                                
+                # Restore value if it's valid, otherwise set to None
+                if current_value in pvfields:
+                    child.setValue(current_value)
+                else:
+                    child.setValue('None')                                
                                 
         except Exception as e:
             self.notify_warning("Channel {}://{} timed out. \n{}".format(proto, name, repr(e)))
@@ -410,6 +416,20 @@ class ScopeControllerBase:
 
             trigger_mode = self.parameters.child("Trigger", "Mode").value()
             serializer.set(Scope.TRIGGER_MODE, trigger_mode)
+
+            threshold = self.parameters.child("Trigger", "Threshold").value()
+            serializer.set(Scope.TRIGGER_THRESHOLD, threshold)
+
+            autoscale_buffer = self.parameters.child("Trigger", "Autoscale Buffer").value()
+            serializer.set(Scope.TRIGGER_AUTOSCALE_BUFFER, autoscale_buffer)
+
+            time_field = self.parameters.child("Trigger", "Time Field").value()
+            if time_field and time_field != "None":
+                serializer.set(Scope.TRIGGER_TIME_FIELD, time_field)
+
+            data_time_field = self.parameters.child("Trigger", "Data Time Field").value()
+            if data_time_field and data_time_field != "None":
+                serializer.set(Scope.TRIGGER_DATA_TIME_FIELD, data_time_field)
         except:
             # Trigger section may not exist in all scope types
             pass

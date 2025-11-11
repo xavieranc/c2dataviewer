@@ -26,6 +26,10 @@ class Scope(Enum):
     REFRESH = auto()
     TRIGGER = auto()
     TRIGGER_MODE = auto()
+    TRIGGER_THRESHOLD = auto()
+    TRIGGER_AUTOSCALE_BUFFER = auto()
+    TRIGGER_TIME_FIELD = auto()
+    TRIGGER_DATA_TIME_FIELD = auto()
     CHANNEL_COUNT = auto()
     MOUSE_OVER = auto()
     CONNECT_ON_START = auto()
@@ -58,6 +62,10 @@ _schema = {
     Scope.TRIGGER: Field(loc=('TRIGGER', 'TRIGGER'), type=str),
     Scope.TRIGGER_MODE: Field(loc=('TRIGGER', 'TRIGGER_MODE'),
                               type=['none', 'onchange', 'gtthreshold', 'ltthreshold']),
+    Scope.TRIGGER_THRESHOLD: Field(loc=('TRIGGER', 'THRESHOLD'), type=float),
+    Scope.TRIGGER_AUTOSCALE_BUFFER: Field(loc=('TRIGGER', 'AUTOSCALE_BUFFER'), type=bool),
+    Scope.TRIGGER_TIME_FIELD: Field(loc=('TRIGGER', 'TIME_FIELD'), type=str),
+    Scope.TRIGGER_DATA_TIME_FIELD: Field(loc=('TRIGGER', 'DATA_TIME_FIELD'), type=str),
     Scope.CHANNEL_COUNT: Field(loc=('CHANNELS', 'COUNT'), type=int),
     Scope.MOUSE_OVER: Field(loc=('DISPLAY', 'MOUSEOVER'), type=bool),
     Scope.CONNECT_ON_START: Field(loc=('ACQUISITION', 'CONNECTONSTART'), type=bool),

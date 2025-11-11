@@ -96,6 +96,18 @@ class ScopeConfigureBase:
 
         config_expanded = True if trigger_mode != "none" else False
 
+        # Load trigger settings from config
+        time_field = self.params.get(Scope.TRIGGER_TIME_FIELD, None)
+        if time_field is None:
+            time_field = "None"
+
+        data_time_field = self.params.get(Scope.TRIGGER_DATA_TIME_FIELD, None)
+        if data_time_field is None:
+            data_time_field = "None"
+
+        autoscale_buffer = self.params.get(Scope.TRIGGER_AUTOSCALE_BUFFER, True)
+        threshold = self.params.get(Scope.TRIGGER_THRESHOLD, 0.0)
+
         cfg ={"name": "Trigger",
               "type": "group",
               "expanded": config_expanded,
@@ -111,11 +123,12 @@ class ScopeConfigureBase:
                   {"name": "PV", "type": "str", "value": trigger_pv},
                   {"name": "Trig Status", "type": "str", "value": "", "readonly": True},
                   {"name": "Trig Value", "type": "str", "value": "", "readonly": True},
-                  {"name": "Time Field", "type": "list", "limits" :
-                   [ "None" ], "default" : "None", "visible" : False},
-                  {"name": "Data Time Field", "type": "list", "limits" :["None"], "default" : "None" },
-                  {"name": "Autoscale Buffer", "type": "bool", "value" : True},
-                  {"name": "Threshold", "type": "float", "value": 0.0},
+                  {"name": "Time Field", "type": "list", "limits" : [time_field],
+                   "value": time_field, "default" : "None", "visible" : False},
+                  {"name": "Data Time Field", "type": "list", "limits" : [data_time_field],
+                   "value": data_time_field, "default" : "None" },
+                  {"name": "Autoscale Buffer", "type": "bool", "value" : autoscale_buffer},
+                  {"name": "Threshold", "type": "float", "value": threshold},
               ]}
         return cfg
     
