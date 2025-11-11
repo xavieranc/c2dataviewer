@@ -122,6 +122,11 @@ class ScopeController(ScopeControllerBase):
         mouse_over = self.parameters.child("Display").child("Mouse Over").value()
         self._win.graphicsWidget.set_enable_mouseover(mouse_over)
 
+        # Apply Extra Display Fields from config
+        extra_fields = self.parameters.child("Config").child("Extra Display Fields").value()
+        if extra_fields:
+            self._win.graphicsWidget.set_mouseover_fields(extra_fields)
+
         if start:
             self.start_plotting()            
             
@@ -230,7 +235,14 @@ class ScopeController(ScopeControllerBase):
                 self.set_channel_data(chan_name, 'Field', c.value())
 
         child = self.parameters.child('Config').child('Extra Display Fields')
+        # Preserve current values before updating limits
+        current_values = child.value()
         child.setLimits(fdr_all)
+        # Restore values that are still valid
+        if current_values:
+            valid_values = [v for v in current_values if v in fdr_all]
+            if valid_values:
+                child.setValue(valid_values)
             
     def __failed_connection_callback(self, flag):
         """

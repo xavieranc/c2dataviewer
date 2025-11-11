@@ -161,9 +161,11 @@ class Configure(ScopeConfigureBase):
         self.default_major_tick = self.params.get(Scope.MAJORTICKS, 0)
         self.default_minor_tick = self.params.get(Scope.MINORTICKS, 0)
 
-        #TODO: add extra display fields configuration
+        # Load extra display fields from config
+        extra_fields = self.params.get(Scope.EXTRA_DISPLAY_FIELDS, [])
+
         mo_display_loc = self.params.get(Scope.MOUSE_OVER_DISPLAY_LOCATION, 'bottom_right').replace('_', '-')
-        
+
         cfg = {"name": "Config",
                "type": "group",
                "expanded": True,
@@ -172,9 +174,9 @@ class Configure(ScopeConfigureBase):
                    {"name": "X Axes", "type": "list", "limits": axes, "value": self.default_xaxes},
                    {"name": "Major Ticks", "type": "int", "value": self.default_major_tick, 'decimals':20},
                    {"name": "Minor Ticks", "type": "int", "value": self.default_minor_tick, 'decimals':20},
-                   {"name": "Extra Display Fields", "type": "checklist", "value": [], "limits":[], "expanded": False},
+                   {"name": "Extra Display Fields", "type": "checklist", "value": extra_fields, "limits": extra_fields, "expanded": False},
                    {"name": "MO Disp Location", "type": "list", "limits": ['top-right', 'bottom-right', 'bottom-left'], "value": mo_display_loc}
-                   
+
                    ]
                }
         return cfg
