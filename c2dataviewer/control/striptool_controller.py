@@ -108,7 +108,9 @@ class StripToolController(ScopeControllerBase):
         if not self._win.graphicsWidget.max_length:
             self.update_buffer_samples(int(60000 / self.refresh))
 
-        self._win.graphicsWidget.enable_sampling_mode(True)
+        # Apply Sample Mode from config
+        sample_mode = self.parameters.child("Acquisition", "Sample Mode").value()
+        self._win.graphicsWidget.enable_sampling_mode(sample_mode)
         self._pvedit_dialog.set_completion_callback(self.pv_edit_callback)
         self._init_pvlist(cfg.pvs.values())
         self.start_plotting()
@@ -265,14 +267,7 @@ class StripToolController(ScopeControllerBase):
         # Serialize PV/channel configurations
         chan_cfgs = []
         for pvname, si in self.pvdict.items():
-            pv_str = pvname
-            # Always add protocol prefix if not already present
-            if si.proto:
-                # Convert ProviderType enum to string (e.g., "ProviderType.PVA" -> "pva")
-                proto_str = str(si.proto).split('.')[-1].lower()
-                # Check if PV already has protocol prefix
-                if '://' not in pvname:
-                    pv_str = f'{proto_str}://{pvname}'
+            pv_str = f'{str(si.proto).lower()}://{pvname}'
 
             chan_cfg = {
                 'pv': pv_str,

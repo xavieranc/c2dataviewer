@@ -67,7 +67,13 @@ class StripToolConfigure(ScopeConfigureBase):
         acquisition = super().assemble_acquisition(section)
         children = acquisition['children']
 
-        children.append({"name": "Sample Mode", "type":"bool", "value": True})
+        # Load Sample Mode from config
+        sample_mode = self.params.get(Striptool.SAMPLEMODE, default=True)
+        # Handle string values from config file
+        if isinstance(sample_mode, str):
+            sample_mode = sample_mode.lower() in ('true', '1', 'yes')
+
+        children.append({"name": "Sample Mode", "type":"bool", "value": sample_mode})
 
         return acquisition
     
