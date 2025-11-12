@@ -22,29 +22,21 @@ logger.setLevel(logging.DEBUG)
 
 
 class TestScopeConfig(unittest.TestCase):
-    def setUp(self):
-        """Set up logging capture for each test."""
-        self.log_stream = StringIO()
-        self.log_handler = logging.StreamHandler(self.log_stream)
-        self.log_handler.setLevel(logging.DEBUG)
+    @classmethod
+    def setUpClass(cls):
+        """Set up logging capture once for all tests."""
+        cls.log_stream = StringIO()
+        cls.log_handler = logging.StreamHandler(cls.log_stream)
+        cls.log_handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
-        self.log_handler.setFormatter(formatter)
-        logger.addHandler(self.log_handler)
+        cls.log_handler.setFormatter(formatter)
+        logger.addHandler(cls.log_handler)
 
-    def tearDown(self):
-        """Print captured logs only if test failed."""
-        logger.removeHandler(self.log_handler)
-        # Check if test failed
-        if hasattr(self, '_outcome'):
-            result = self._outcome.result
-            if result.failures or result.errors:
-                # Test failed, print the logs
-                log_output = self.log_stream.getvalue()
-                if log_output:
-                    print(f"\n--- Debug output for {self.id()} ---")
-                    print(log_output)
-                    print("--- End debug output ---\n")
-        self.log_stream.close()
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up logging after all tests."""
+        logger.removeHandler(cls.log_handler)
+        cls.log_stream.close()
 
     def get_display_val(self, data, val):
         """
@@ -103,8 +95,15 @@ class TestScopeConfig(unittest.TestCase):
         self.assertEqual(self.get_display_val(data=trigger, val='PV'), 'pv1')
         self.assertEqual(self.get_display_val(data=trigger, val='Mode'), 'onchange')
 
-    def test_autoscale(self):
-        # Does autoscale setting in app specific section take precedence?
+    def test_display_configuration(self):
+        """
+        Comprehensive test for display configuration including:
+        - Autoscale precedence (SCOPE section overrides DISPLAY section)
+        - All settings with valid values
+        - Default values when settings absent
+        - Bad/invalid input handling with fallback to defaults
+        """
+        # Test 1: Autoscale precedence - SCOPE section overrides DISPLAY
         raw1 = """
         [SCOPE]
         DefaultProtocol = ca
@@ -122,65 +121,28 @@ class TestScopeConfig(unittest.TestCase):
         configure = Configure(parser)
         logger.debug('CONFIG:\n%s', self.dump_config(parser))
         display = configure.assemble_display()
-
-        logger.debug("Assembled display (raw1):\n%s", pformat(display))
-
-        # 'SCOPE' section has AUTOSCALE=False, so Autoscale should be False
+        logger.debug("Assembled display (autoscale precedence):\n%s", pformat(display))
+        # SCOPE section has AUTOSCALE=False, so it takes precedence
         self.assertFalse(self.get_display_val(data=display, val='Autoscale'))
 
-        # When autoscale setting absent in app specific section, but present in DISPLAY
+        # Test 2: Autoscale from DISPLAY section when not in SCOPE
         raw2 = """
         [SCOPE]
         DefaultProtocol = ca
 
         [DISPLAY]
         AUTOSCALE=True
-        AVERAGE=1
-        HISTOGRAM=False
-        N_BIN=100
-        REFRESH=100
         """
         parser = ConfigParser()
         parser.read_string(raw2)
         configure = Configure(parser)
         section = parser["DISPLAY"]
         display = configure.assemble_display(section=section)
-
-        logger.debug("Assembled display (raw2):\n%s", pformat(display))
-
+        logger.debug("Assembled display (autoscale from display):\n%s", pformat(display))
         self.assertTrue(self.get_display_val(data=display, val='Autoscale'))
 
-        # When autoscale setting absent in both app specific and DISPLAY sections,
-        # default (False) is selected
+        # Test 3: All settings with valid values
         raw3 = """
-        [SCOPE]
-        DefaultProtocol = ca
-
-        [DISPLAY]
-        AVERAGE=1
-        HISTOGRAM=False
-        N_BIN=100
-        REFRESH=100
-        """
-        parser = ConfigParser()
-        parser.read_string(raw3)
-        configure = Configure(parser)
-        section = parser["DISPLAY"]
-        display = configure.assemble_display(section=section)
-
-        logger.debug("Assembled display (raw3):\n%s", pformat(display))
-
-        self.assertFalse(self.get_display_val(data=display, val='Autoscale'))
-
-    # ------------------------------------------------------------------
-    # New tests
-    # ------------------------------------------------------------------
-    def test_display_all_settings(self):
-        """
-        Provide every DISPLAY setting and verify that each is picked up
-        correctly by assemble_display.
-        """
-        raw = """
         [SCOPE]
         DefaultProtocol = ca
         AUTOSCALE=True
@@ -193,51 +155,32 @@ class TestScopeConfig(unittest.TestCase):
         HISTOGRAM=True
         N_BIN=256
         REFRESH=500
-        AUTOSCALE=False
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw3)
         configure = Configure(parser)
         section = parser["DISPLAY"]
         display = configure.assemble_display(section=section)
-
         logger.debug("Assembled display (all settings):\n%s", pformat(display))
-
-        # Mode
         self.assertEqual(self.get_display_val(display, 'Mode'), 'fft')
-        # FFT filter (capitalized by implementation)
         self.assertEqual(self.get_display_val(display, 'FFT filter'), 'hamming')
-        # Exp moving avg
         self.assertEqual(self.get_display_val(display, 'Exp moving avg'), 10)
-        # Autoscale -> 'SCOPE' section takes precedence (True)
-        self.assertTrue(self.get_display_val(display, 'Autoscale'))
-        # Single axis
+        self.assertTrue(self.get_display_val(display, 'Autoscale'))  # SCOPE precedence
         self.assertFalse(self.get_display_val(display, 'Single axis'))
-        # Histogram
         self.assertTrue(self.get_display_val(display, 'Histogram'))
-        # Num bins
         self.assertEqual(self.get_display_val(display, 'Num Bins'), 256)
-        # Refresh is converted from ms to seconds (500 ms → 0.5 s)
-        self.assertEqual(self.get_display_val(display, 'Refresh'), 0.5)
+        self.assertEqual(self.get_display_val(display, 'Refresh'), 0.5)  # 500ms -> 0.5s
 
-    def test_display_defaults(self):
-        """
-        Verify defaults when the DISPLAY section (or individual keys)
-        are not provided.
-        """
-        raw = """
+        # Test 4: Default values when no DISPLAY section
+        raw4 = """
         [SCOPE]
         DefaultProtocol = ca
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw4)
         configure = Configure(parser)
-
-        # Passing section=None simulates absence of DISPLAY
         display = configure.assemble_display(section=None)
-
         logger.debug("Assembled display (defaults):\n%s", pformat(display))
-
         self.assertEqual(self.get_display_val(display, 'Mode'), 'normal')
         self.assertEqual(self.get_display_val(display, 'FFT filter'), 'none')
         self.assertEqual(self.get_display_val(display, 'Exp moving avg'), 1)
@@ -247,12 +190,8 @@ class TestScopeConfig(unittest.TestCase):
         self.assertEqual(self.get_display_val(display, 'Num Bins'), 100)
         self.assertEqual(self.get_display_val(display, 'Refresh'), 0.1)
 
-    def test_display_bad_input(self):
-        """
-        Feed bad/unsupported values and verify that assemble_display
-        gracefully falls back to safe defaults.
-        """
-        raw = """
+        # Test 5: Bad/invalid input falls back to defaults
+        raw5 = """
         [DISPLAY]
         MODE=invalidmode
         FFT_FILTER=bogusfilter
@@ -263,36 +202,33 @@ class TestScopeConfig(unittest.TestCase):
         REFRESH=badfloat
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw5)
         configure = Configure(parser)
         section = parser["DISPLAY"]
         display = configure.assemble_display(section=section)
-
         logger.debug("Assembled display (bad input):\n%s", pformat(display))
-
-        # Invalid mode -> "normal"
         self.assertEqual(self.get_display_val(display, 'Mode'), 'normal')
-        # Invalid filter -> 'none'
         self.assertEqual(self.get_display_val(display, 'FFT filter'), 'none')
-        # Negative average -> reset to 1
         self.assertEqual(self.get_display_val(display, 'Exp moving avg'), 1)
-        # Bad single axis value -> default True
         self.assertTrue(self.get_display_val(display, 'Single axis'))
-        # Bad histogram value -> default False
         self.assertFalse(self.get_display_val(display, 'Histogram'))
-        # Bad int for N_BIN -> 1
         self.assertEqual(self.get_display_val(display, 'Num Bins'), 100)
-        # Bad float for refresh -> 0.001 (1 ms expressed as seconds)
         self.assertEqual(self.get_display_val(display, 'Refresh'), 0.1)
 
     # ------------------------------------------------------------------
     # Channel configuration tests
     # ------------------------------------------------------------------
-    def test_channel_basic(self):
+    def test_channel_configuration(self):
         """
-        Test basic channel configuration with explicit channel definitions.
+        Comprehensive test for channel configuration including:
+        - Basic channel definitions with fields and offsets
+        - Default values when no channels specified
+        - Channel count override when more channels defined than COUNT
+        - Maximum channel limit (10 channels)
+        - Partial configuration with mixed defined/default channels
         """
-        raw = """
+        # Test 1: Basic channel configuration
+        raw1 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -304,59 +240,38 @@ class TestScopeConfig(unittest.TestCase):
         chan1.dcoffset=-2.0
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw1)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (basic):\n%s", pformat(channels))
-
-        # Should have 2 channels
         self.assertEqual(len(channels), 2)
+        self.assertEqual(channels[0]['name'], 'Channel 1')
+        self.assertEqual(self.get_display_val(channels[0], 'Field'), 'field1')
+        self.assertEqual(self.get_display_val(channels[0], 'DC offset'), 1.5)
+        self.assertEqual(self.get_display_val(channels[0], 'Color'), '#FFFF00')
+        self.assertEqual(channels[1]['name'], 'Channel 2')
+        self.assertEqual(self.get_display_val(channels[1], 'Field'), 'field2')
+        self.assertEqual(self.get_display_val(channels[1], 'DC offset'), -2.0)
+        self.assertEqual(self.get_display_val(channels[1], 'Color'), '#FF00FF')
 
-        # Check first channel
-        ch0 = channels[0]
-        self.assertEqual(ch0['name'], 'Channel 1')
-        self.assertEqual(self.get_display_val(ch0, 'Field'), 'field1')
-        self.assertEqual(self.get_display_val(ch0, 'DC offset'), 1.5)
-        self.assertEqual(self.get_display_val(ch0, 'Color'), '#FFFF00')
-
-        # Check second channel
-        ch1 = channels[1]
-        self.assertEqual(ch1['name'], 'Channel 2')
-        self.assertEqual(self.get_display_val(ch1, 'Field'), 'field2')
-        self.assertEqual(self.get_display_val(ch1, 'DC offset'), -2.0)
-        self.assertEqual(self.get_display_val(ch1, 'Color'), '#FF00FF')
-
-    def test_channel_defaults(self):
-        """
-        Test channel configuration with default values when no channels specified.
-        """
-        raw = """
+        # Test 2: Default values when no channels specified
+        raw2 = """
         [SCOPE]
         DefaultProtocol = ca
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw2)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (defaults):\n%s", pformat(channels))
-
-        # Should have 4 channels by default
-        self.assertEqual(len(channels), 4)
-
-        # All channels should have default values
+        self.assertEqual(len(channels), 4)  # 4 channels by default
         for i, ch in enumerate(channels):
             self.assertEqual(ch['name'], f'Channel {i+1}')
             self.assertEqual(self.get_display_val(ch, 'Field'), 'None')
             self.assertEqual(self.get_display_val(ch, 'DC offset'), 0.0)
 
-    def test_channel_count_override(self):
-        """
-        Test that channel count is overridden when more channels are defined
-        than specified in COUNT.
-        """
-        raw = """
+        # Test 3: Channel count override when more channels defined
+        raw3 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -369,24 +284,16 @@ class TestScopeConfig(unittest.TestCase):
         chan4.field=field5
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw3)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (count override):\n%s", pformat(channels))
-
-        # Should have 5 channels (overriding COUNT=2)
-        self.assertEqual(len(channels), 5)
-
-        # Verify all defined channels are present
+        self.assertEqual(len(channels), 5)  # Overrides COUNT=2
         self.assertEqual(self.get_display_val(channels[0], 'Field'), 'field1')
         self.assertEqual(self.get_display_val(channels[4], 'Field'), 'field5')
 
-    def test_channel_max_limit(self):
-        """
-        Test that channel count is limited to maximum of 10.
-        """
-        raw = """
+        # Test 4: Maximum channel limit
+        raw4 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -394,24 +301,14 @@ class TestScopeConfig(unittest.TestCase):
         COUNT=15
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw4)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (max limit):\n%s", pformat(channels))
+        self.assertEqual(len(channels), 10)  # Limited to 10 channels
 
-        # Should be limited to 10 channels
-        self.assertEqual(len(channels), 10)
-
-    def test_channel_partial_config(self):
-        """
-        Test channel configuration with only some channels defined.
-        Remaining channels should use defaults.
-
-        Note: Channels from config file are returned in the order they appear,
-        not by channel number. Missing channel indices are filled with defaults.
-        """
-        raw = """
+        # Test 5: Partial channel configuration
+        raw5 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -422,36 +319,29 @@ class TestScopeConfig(unittest.TestCase):
         chan2.field=field3
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw5)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (partial config):\n%s", pformat(channels))
-
-        # Should have 4 channels
         self.assertEqual(len(channels), 4)
-
-        # First two channels are from config (chan0 and chan2 in order they appear)
-        # Channel 0 should have custom config
+        # Channels from config appear first in order defined
         self.assertEqual(self.get_display_val(channels[0], 'Field'), 'field1')
         self.assertEqual(self.get_display_val(channels[0], 'DC offset'), 5.0)
-
-        # Channel 1 is chan2 from config (second channel defined)
         self.assertEqual(self.get_display_val(channels[1], 'Field'), 'field3')
         self.assertEqual(self.get_display_val(channels[1], 'DC offset'), 0.0)
-
-        # Remaining channels (2 and 3) should have defaults
+        # Remaining channels use defaults
         self.assertEqual(self.get_display_val(channels[2], 'Field'), 'None')
-        self.assertEqual(self.get_display_val(channels[2], 'DC offset'), 0.0)
-
         self.assertEqual(self.get_display_val(channels[3], 'Field'), 'None')
-        self.assertEqual(self.get_display_val(channels[3], 'DC offset'), 0.0)
 
-    def test_channel_colors(self):
+    def test_channel_properties(self):
         """
-        Test that channels are assigned unique colors from the color palette.
+        Test specific channel properties including:
+        - Color assignment from palette
+        - DC offset with various numeric formats
+        - Axis location defaults
         """
-        raw = """
+        # Test 1: Color assignment
+        raw1 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -459,24 +349,18 @@ class TestScopeConfig(unittest.TestCase):
         COUNT=5
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw1)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (colors):\n%s", pformat(channels))
-
         expected_colors = ['#FFFF00', '#FF00FF', '#55FF55', '#00FFFF', '#5555FF']
-
         for i, (ch, expected_color) in enumerate(zip(channels, expected_colors)):
             color = self.get_display_val(ch, 'Color')
             self.assertEqual(color, expected_color,
                            f"Channel {i} color mismatch: expected {expected_color}, got {color}")
 
-    def test_channel_dcoffset_types(self):
-        """
-        Test that DC offset handles different numeric formats correctly.
-        """
-        raw = """
+        # Test 2: DC offset with different numeric formats
+        raw2 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -488,22 +372,17 @@ class TestScopeConfig(unittest.TestCase):
         chan3.dcoffset=1e-3
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw2)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (dcoffset types):\n%s", pformat(channels))
-
         self.assertEqual(self.get_display_val(channels[0], 'DC offset'), 0.0)
         self.assertEqual(self.get_display_val(channels[1], 'DC offset'), 10.5)
         self.assertEqual(self.get_display_val(channels[2], 'DC offset'), -5.25)
         self.assertAlmostEqual(self.get_display_val(channels[3], 'DC offset'), 0.001)
 
-    def test_channel_axis_location_defaults(self):
-        """
-        Test that all channels have axis location with correct default value.
-        """
-        raw = """
+        # Test 3: Axis location defaults
+        raw3 = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -513,13 +392,10 @@ class TestScopeConfig(unittest.TestCase):
         chan1.field=field2
         """
         parser = ConfigParser()
-        parser.read_string(raw)
+        parser.read_string(raw3)
         configure = Configure(parser)
         channels = configure.assemble_channel()
-
         logger.debug("Assembled channels (axis location):\n%s", pformat(channels))
-
-        # Both channels should have axis location set to 'Left' by default
         for i, ch in enumerate(channels):
             axis_loc = self.get_display_val(ch, 'Axis location')
             self.assertEqual(axis_loc, 'Left',
