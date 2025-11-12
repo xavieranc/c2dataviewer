@@ -57,27 +57,50 @@ class TestImageDisplay(unittest.TestCase):
 
         # Build parameter tree
         configure = Configure(configparser.ConfigParser())
-        parameters = Parameter.create(
+        self.parameters = Parameter.create(
             name="params", type="group", children=configure.parse())
-        self.window.parameterPane.setParameters(parameters, showTop=False)
+        self.window.parameterPane.setParameters(self.parameters, showTop=False)
 
         # Model to be used
-        model = DataReceiver()
+        self.model = DataReceiver()
 
         # Build GUI elements
-        warning = WarningDialog(None)
+        self.warning = WarningDialog(None)
 
         self.scope_controller = ScopeController(
-            widget=self.window, model=model, parameters=parameters, WARNING=warning)
+            widget=self.window, model=self.model, parameters=self.parameters, WARNING=self.warning)
 
     def tearDown(self):
         """
         Tear down the environment after each test case.
-        This mentod is called after each test.
+        This method is called after each test.
 
         :return:
         """
-        pass
+        # Clean up the window to prevent Qt object deletion issues
+        if hasattr(self, 'window'):
+            self.window.close()
+            self.window.deleteLater()
+        if hasattr(self, 'scope_controller'):
+            del self.scope_controller
+        # Process pending Qt events to ensure cleanup
+        QtWidgets.QApplication.processEvents()
+
+    def create_controller(self, configure):
+        """
+        Helper method to create a controller with the given Configure object.
+
+        :param configure: Configure object with parsed configuration
+        :return: ScopeController instance
+        """
+        parameters = Parameter.create(
+            name="params", type="group", children=configure.parse())
+        self.window.parameterPane.setParameters(parameters, showTop=False)
+
+        controller = ScopeController(
+            widget=self.window, model=self.model, parameters=parameters, WARNING=self.warning)
+
+        return controller
 
     def test_update_status(self):
         """
@@ -138,13 +161,10 @@ class TestImageDisplay(unittest.TestCase):
         bufval = self.scope_controller.parameters.child("Acquisition").child("Buffer (Objects)").value()
         self.assertEqual(bufval, 1)
 
-    def test_configuration_and_kwargs(self):
+    def test_config_file_settings(self):
         """
-        Test config file settings, keyword arguments, and kwarg override behavior.
-        Tests that settings from config file are properly loaded, kwargs work,
-        and kwargs override config file values when both are present.
+        Test that settings from config file are properly loaded into controller.
         """
-        # Test 1: Config file settings
         config_str = """
         [SCOPE]
         DefaultProtocol = ca
@@ -161,45 +181,35 @@ class TestImageDisplay(unittest.TestCase):
         parser = configparser.ConfigParser()
         parser.read_string(config_str)
 
-        window = ScopeWindow()
         configure = Configure(parser)
-        parameters = Parameter.create(
-            name="params", type="group", children=configure.parse())
-        window.parameterPane.setParameters(parameters, showTop=False)
-
-        model = DataReceiver()
-        warning = WarningDialog(None)
-        controller = ScopeController(
-            widget=window, model=model, parameters=parameters, WARNING=warning)
+        controller = self.create_controller(configure)
 
         # Verify config settings are loaded
-        self.assertTrue(parameters.child("Display").child("Autoscale").value())
-        self.assertEqual(parameters.child("Display").child("Mode").value(), 'fft')
-        self.assertEqual(parameters.child("Display").child("Exp moving avg").value(), 5)
-        self.assertEqual(parameters.child("Display").child("Refresh").value(), 0.2)
-        self.assertEqual(parameters.child("Acquisition").child("Buffer (Samples)").value(), 500)
+        self.assertTrue(controller.parameters.child("Display").child("Autoscale").value())
+        self.assertEqual(controller.parameters.child("Display").child("Mode").value(), 'fft')
+        self.assertEqual(controller.parameters.child("Display").child("Exp moving avg").value(), 5)
+        self.assertEqual(controller.parameters.child("Display").child("Refresh").value(), 0.2)
+        self.assertEqual(controller.parameters.child("Acquisition").child("Buffer (Samples)").value(), 500)
 
-        # Test 2: Kwarg settings
-        parser2 = configparser.ConfigParser()
-        parser2.read_string("[SCOPE]\nDefaultProtocol = ca")
+    def test_kwarg_settings(self):
+        """
+        Test that keyword arguments are properly used in controller setup.
+        """
+        parser = configparser.ConfigParser()
+        parser.read_string("[SCOPE]\nDefaultProtocol = ca")
 
-        window2 = ScopeWindow()
-        configure2 = Configure(parser2, arrayid='TestArray', xaxes='TestXAxis')
-        parameters2 = Parameter.create(
-            name="params", type="group", children=configure2.parse())
-        window2.parameterPane.setParameters(parameters2, showTop=False)
-
-        model2 = DataReceiver()
-        warning2 = WarningDialog(None)
-        controller2 = ScopeController(
-            widget=window2, model=model2, parameters=parameters2, WARNING=warning2)
+        configure = Configure(parser, arrayid='TestArray', xaxes='TestXAxis')
+        controller = self.create_controller(configure)
 
         # Verify kwarg settings are used
-        self.assertEqual(parameters2.child("Config").child("ArrayId").value(), 'TestArray')
-        self.assertEqual(parameters2.child("Config").child("X Axes").value(), 'TestXAxis')
+        self.assertEqual(controller.parameters.child("Config").child("ArrayId").value(), 'TestArray')
+        self.assertEqual(controller.parameters.child("Config").child("X Axes").value(), 'TestXAxis')
 
-        # Test 3: Kwarg overrides config
-        config_str3 = """
+    def test_kwarg_overrides_config(self):
+        """
+        Test that keyword arguments override config file settings.
+        """
+        config_str = """
         [SCOPE]
         DefaultProtocol = ca
 
@@ -207,51 +217,36 @@ class TestImageDisplay(unittest.TestCase):
         ARRAYID = ConfigArrayId
         XAXES = ConfigXAxis
         """
-        parser3 = configparser.ConfigParser()
-        parser3.read_string(config_str3)
+        parser = configparser.ConfigParser()
+        parser.read_string(config_str)
 
-        window3 = ScopeWindow()
-        configure3 = Configure(parser3, arrayid='KwargArrayId', xaxes='KwargXAxis')
-        parameters3 = Parameter.create(
-            name="params", type="group", children=configure3.parse())
-        window3.parameterPane.setParameters(parameters3, showTop=False)
-
-        model3 = DataReceiver()
-        warning3 = WarningDialog(None)
-        controller3 = ScopeController(
-            widget=window3, model=model3, parameters=parameters3, WARNING=warning3)
+        configure = Configure(parser, arrayid='KwargArrayId', xaxes='KwargXAxis')
+        controller = self.create_controller(configure)
 
         # Verify kwargs override config file values
-        self.assertEqual(parameters3.child("Config").child("ArrayId").value(), 'KwargArrayId')
-        self.assertEqual(parameters3.child("Config").child("X Axes").value(), 'KwargXAxis')
+        self.assertEqual(controller.parameters.child("Config").child("ArrayId").value(), 'KwargArrayId')
+        self.assertEqual(controller.parameters.child("Config").child("X Axes").value(), 'KwargXAxis')
 
-        # Test 4: PV kwarg
-        parser4 = configparser.ConfigParser()
-        parser4.read_string("[SCOPE]\nDefaultProtocol = ca")
+    def test_pv_kwarg(self):
+        """
+        Test that PV can be set via keyword argument.
+        """
+        parser = configparser.ConfigParser()
+        parser.read_string("[SCOPE]\nDefaultProtocol = ca")
 
-        window4 = ScopeWindow()
-        configure4 = Configure(parser4, pv={'test': 'TEST:PV:NAME'})
-        parameters4 = Parameter.create(
-            name="params", type="group", children=configure4.parse())
-        window4.parameterPane.setParameters(parameters4, showTop=False)
-
-        model4 = DataReceiver()
-        warning4 = WarningDialog(None)
-        controller4 = ScopeController(
-            widget=window4, model=model4, parameters=parameters4, WARNING=warning4)
+        configure = Configure(parser, pv={'test': 'TEST:PV:NAME'})
+        controller = self.create_controller(configure)
 
         # Verify PV kwarg is used
-        self.assertEqual(parameters4.child("Acquisition").child("PV").value(), 'TEST:PV:NAME')
+        self.assertEqual(controller.parameters.child("Acquisition").child("PV").value(), 'TEST:PV:NAME')
 
-    def test_serialize(self):
+    def test_serialize_full_config(self):
         """
-        Test serialize function with full config, minimal config, and buffer units.
-        Verifies that serialization works properly for all configuration scenarios.
+        Test that serialize function writes proper configuration to file with channels.
         """
         from io import StringIO
         from configparser import ConfigParser
 
-        # Test 1: Full configuration with channels
         config_str = """
         [SCOPE]
         DefaultProtocol = pva
@@ -276,16 +271,8 @@ class TestImageDisplay(unittest.TestCase):
         parser = ConfigParser()
         parser.read_string(config_str)
 
-        window = ScopeWindow()
         configure = Configure(parser)
-        parameters = Parameter.create(
-            name="params", type="group", children=configure.parse())
-        window.parameterPane.setParameters(parameters, showTop=False)
-
-        model = DataReceiver()
-        warning = WarningDialog(None)
-        controller = ScopeController(
-            widget=window, model=model, parameters=parameters, WARNING=warning)
+        controller = self.create_controller(configure)
 
         # Set limits for Field parameters so they can accept custom values
         field_limits = ["None", "field1", "field2"]
@@ -331,41 +318,45 @@ class TestImageDisplay(unittest.TestCase):
         self.assertEqual(result_cfg.get('CHANNELS', 'chan1.dcoffset'), '5.0')
         self.assertEqual(result_cfg.get('CHANNELS', 'chan2.field'), 'field2')
 
-        # Test 2: Minimal configuration (default settings)
-        parser2 = ConfigParser()
-        parser2.read_string("[SCOPE]\nDefaultProtocol = ca")
+    def test_serialize_minimal_config(self):
+        """
+        Test serialize with minimal configuration (default settings).
+        """
+        from io import StringIO
+        from configparser import ConfigParser
 
-        window2 = ScopeWindow()
-        configure2 = Configure(parser2)
-        parameters2 = Parameter.create(
-            name="params", type="group", children=configure2.parse())
-        window2.parameterPane.setParameters(parameters2, showTop=False)
+        parser = ConfigParser()
+        parser.read_string("[SCOPE]\nDefaultProtocol = ca")
 
-        model2 = DataReceiver()
-        warning2 = WarningDialog(None)
-        controller2 = ScopeController(
-            widget=window2, model=model2, parameters=parameters2, WARNING=warning2)
+        configure = Configure(parser)
+        controller = self.create_controller(configure)
 
         # Serialize to StringIO
-        output2 = StringIO()
-        controller2.serialize(output2)
+        output = StringIO()
+        controller.serialize(output)
 
         # Read back the serialized config
-        output2.seek(0)
-        result_cfg2 = ConfigParser()
-        result_cfg2.read_file(output2)
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
 
         # Verify app type
-        self.assertEqual(result_cfg2.get('DEFAULT', 'APP'), 'SCOPE')
+        self.assertEqual(result_cfg.get('DEFAULT', 'APP'), 'SCOPE')
 
         # Verify Display section exists (should have default values)
-        self.assertTrue(result_cfg2.has_section('DISPLAY'))
+        self.assertTrue(result_cfg.has_section('DISPLAY'))
 
         # Verify Acquisition section exists
-        self.assertTrue(result_cfg2.has_section('ACQUISITION'))
+        self.assertTrue(result_cfg.has_section('ACQUISITION'))
 
-        # Test 3: Buffer unit set to Objects
-        config_str3 = """
+    def test_serialize_buffer_objects(self):
+        """
+        Test serialize with buffer unit set to Objects.
+        """
+        from io import StringIO
+        from configparser import ConfigParser
+
+        config_str = """
         [SCOPE]
         DefaultProtocol = pva
 
@@ -373,30 +364,22 @@ class TestImageDisplay(unittest.TestCase):
         BUFFERUNIT = Objects
         BUFFER = 50
         """
-        parser3 = ConfigParser()
-        parser3.read_string(config_str3)
+        parser = ConfigParser()
+        parser.read_string(config_str)
 
-        window3 = ScopeWindow()
-        configure3 = Configure(parser3)
-        parameters3 = Parameter.create(
-            name="params", type="group", children=configure3.parse())
-        window3.parameterPane.setParameters(parameters3, showTop=False)
-
-        model3 = DataReceiver()
-        warning3 = WarningDialog(None)
-        controller3 = ScopeController(
-            widget=window3, model=model3, parameters=parameters3, WARNING=warning3)
+        configure = Configure(parser)
+        controller = self.create_controller(configure)
 
         # Serialize to StringIO
-        output3 = StringIO()
-        controller3.serialize(output3)
+        output = StringIO()
+        controller.serialize(output)
 
         # Read back the serialized config
-        output3.seek(0)
-        result_cfg3 = ConfigParser()
-        result_cfg3.read_file(output3)
+        output.seek(0)
+        result_cfg = ConfigParser()
+        result_cfg.read_file(output)
 
         # Verify buffer unit and size
-        self.assertEqual(result_cfg3.get('ACQUISITION', 'bufferunit'), 'Objects')
-        self.assertEqual(result_cfg3.get('ACQUISITION', 'buffer'), '50')
+        self.assertEqual(result_cfg.get('ACQUISITION', 'bufferunit'), 'Objects')
+        self.assertEqual(result_cfg.get('ACQUISITION', 'buffer'), '50')
 
