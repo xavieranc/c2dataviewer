@@ -1,3 +1,8 @@
+# Release 1.15.0 (11/12/2025)
+- upgraded to pyqtgraph 0.13
+- refactored configuration code, implemented configuration for rest of striptool and scope app settings
+- add support to serialized configuraiton in striptool and scopeapp
+
 # Release 1.14.8 (05/06/2025)
 - Remove python 3.7 build
 - fix failure with x-axis set and trigger is not set
