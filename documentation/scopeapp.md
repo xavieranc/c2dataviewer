@@ -16,7 +16,12 @@ See `c2dv -h` for all options.
 ## Zooming
 To zoom, scroll using the scroll wheel or trackpad.  To pan, left click and drag.  To see all mouse interactions, see [pyqtgraph's documentation](https://pyqtgraph.readthedocs.io/en/latest/mouse_interaction.html).
 
-You can also configure the X/Y range, by right-click, select options from either the X-axis or Y-axis menus.
+You can also configure the X/Y range, by right-clicking on the plot, select options from either the X-axis or Y-axis menus.
+
+
+## Exporting data
+Plotted data can be exported to a file by right-clicking on the plot, then select the "export" from the menu.  For more information, see [pyqtgraph's documentation](https://pyqtgraph.readthedocs.io/en/latest/user_guide/exporting.html
+)
 
 ## Triggering
 Scope application supports software triggering via external v3 PV. When trigger mode is configured and trigger occur,
@@ -78,6 +83,7 @@ Where <SECTION_LIST> is a list of the sections in the file. Below are configurat
 | Setting | Description
 |---|---|
 | Section | List of sections to read in the config file |
+| DefaultProtocol | Default protocol for PVs. Valid values: "ca", "pva". Can be overridden per-PV using protocol prefix |
 
 ### ACQUISITION
 | Setting | Description
@@ -90,27 +96,39 @@ Where <SECTION_LIST> is a list of the sections in the file. Below are configurat
 ### CHANNELS
 | Setting | Description
 |---|---|
-| Chan[ID].Field | PV field to plot.  Field have scalar array data. Can have up to 4 instances specified  (see example above). Can specify fields inside of nested structures with `struct1.struct2.field1` notation where `struct1`, `struct2` are the structure names, and `field1` is the field name |
-| Chan[ID].DcOffset | Extra offset added on top of sample values. Will cause plot Y values to be shifted. |
+| COUNT | Number of channels to display. Default is 4. Maximum is 10. If more channels are defined than specified in COUNT, the actual number of defined channels is used. |
+| Chan[ID].Field | PV field to plot. Field must have scalar array data. Can have up to 10 channels (Chan0 through Chan9). Can specify fields inside of nested structures with `struct1.struct2.field1` notation where `struct1`, `struct2` are the structure names, and `field1` is the field name |
+| Chan[ID].DcOffset | Extra offset added on top of sample values. Will cause plot Y values to be shifted. Default is 0.0 |
 
 ### DISPLAY
 | Setting | Description |
 |---|---|
-|Refresh| Refresh time in milliseconds |
-|Autoscale | Enable autoscale. Set to true or false| 
-|Mode| Set display mode.  Valid values are: "normal", "fft", "psd", "diff", "autocorrelate_fft"|
-|Single\_Axis| Enable single axis. Set to true or false |
-|Histogram | Turns on histogram mode. Set to true or false |
+| Refresh | Refresh time in milliseconds. Default is 100 ms |
+| Autoscale | Enable autoscale. Set to true or false. Default is false for Scope app. |
+| Mode | Set display mode. Valid values are: "normal", "fft", "psd", "diff", "autocorrelate_fft". Default is "normal" |
+| FFT\_FILTER | FFT filter to apply. Valid values are: "none", "hamming". Default is "none" |
+| Average | Exponential moving average (EMA) value. Must be >= 1. Default is 1 |
+| Single\_Axis | Enable single axis mode. Set to true or false. Default is true |
+| Histogram | Turns on histogram mode. Set to true or false. Default is false |
+| N\_BIN | Number of bins for histogram. Default is 100 |
+| Mouse\_Over | Enable mouse over display. Set to true or false. Default is false |
 
 ### CONFIG
 | Setting | Description |
 |---|---|
-|XAxes| PV field to use for X-axis values in X vs Y mode|
-|MajorTicks| Sample interval length for major ticks|
-|MinorTicks| Sample interval length for minor ticks|
+| XAxes | PV field to use for X-axis values in X vs Y mode. Default is "None" |
+| ArrayId | Array ID field for selection. Default is "None" |
+| MajorTicks | Sample interval length for major ticks. Default is 0 |
+| MinorTicks | Sample interval length for minor ticks. Default is 0 |
+| Extra\_Display\_Fields | Additional fields to display in mouseover/info. Provide as comma-separated list |
+| Mouse\_Over\_Display\_Location | Location for mouseover display. Valid values: "top_right", "bottom_right", "bottom_left". Default is "bottom_right" |
 
-## TRIGGER
+### TRIGGER
 | Setting | Description |
 |---|---|
-|Trigger| Trigger PV |
-|Trigger_Mode | Trigger mode. Can be "Off", "OnChange", "GtThreshold", or "LtThreshold" |
+| Trigger | Trigger PV name. Can include protocol prefix (ca:// or pva://) |
+| Trigger\_Mode | Trigger mode. Valid values: "Off" (or "none"), "OnChange", "GtThreshold", "LtThreshold". Default is "off" |
+| Trigger\_Time\_Field | Field in trigger PV containing timestamp. For CA protocol, automatically uses "timeStamp". For PVA, specify the field name. Default is "None" |
+| Trigger\_Data\_Time\_Field | Field in data PV containing time array to sync with trigger timestamp. Default is "None" |
+| Trigger\_Autoscale\_Buffer | Enable autoscaling of buffer after trigger. Set to true or false. Default is true |
+| Trigger\_Threshold | Threshold value for GtThreshold or LtThreshold modes. Default is 0.0 |
