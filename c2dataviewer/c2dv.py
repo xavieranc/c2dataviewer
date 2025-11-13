@@ -23,14 +23,7 @@ from configparser import ConfigParser
 import enum
 import logging
 import faulthandler
-
-class AppType(enum.Enum):
-    SCOPE = "scope"
-    IMAGE = "image"
-    STRIPTOOL = "striptool"
-
-    def __str__(self):
-        return self.value
+from .control.config import AppType
 
 def qxl_module_loaded():
     fn = "/proc/modules"

@@ -14,3 +14,14 @@ dist
 
 # Tox unit tests
 .tox
+.aider*
+# emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+

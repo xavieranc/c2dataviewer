@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from .scope_config_base import ScopeConfigureBase
-import logging
 import re
+from .config import Scope
 
 """
 C2 DATA VIEWER is distributed subject to a Software License Agreement found
@@ -35,8 +35,13 @@ class Configure(ScopeConfigureBase):
         self.default_color = ['#FFFF00', '#FF00FF', '#55FF55', '#00FFFF', '#5555FF',
                               '#5500FF', '#FF5555', '#0000FF', '#FFAA00', '#000000']
         
-        self.default_arrayid = kwargs.get("arrayid", "None")
+        self.default_arrayid = kwargs.get("arrayid", None)
+        if not self.default_arrayid:
+            self.default_arrayid = self.params.get(Scope.ARRAYID, 'None').capitalize()
         self.default_xaxes = kwargs.get("xaxes", "None")
+        if not self.default_xaxes:
+            self.default_xaxes = self.params.get(Scope.XAXES, 'None').capitalize()
+        
 
         
     def assemble_channel(self, section=None):
@@ -47,25 +52,13 @@ class Configure(ScopeConfigureBase):
         :return:
         """
         # get channel counts to display, 4 by default
-        if section is None:
-            self.counts = 4
-        else:
-            self.counts = section.getint('COUNT', 4)
-
+        self.counts = self.params.get(Scope.CHANNEL_COUNT, default=4)
         channel = []
 
         #Read channel information.  Channel order is
         #determined by order in config
-        chan_cfg_lookup = {}
+        chan_cfgs = self.params.get_channel_config()
         
-        if section:
-            for k, v in section.items():
-                if bool(re.match('chan', k, re.I)):
-                    ch, param = k.lower().split('.')
-                    chan_cfg_lookup[ch] = chan_cfg_lookup.get(ch, {})
-                    chan_cfg_lookup[ch][param] = v
-
-        chan_cfgs = list(chan_cfg_lookup.values())
         if len(chan_cfgs) > self.counts:
             self.counts = len(chan_cfgs)
 
@@ -110,44 +103,31 @@ class Configure(ScopeConfigureBase):
         display = super().assemble_display(section=section, app_section_key="SCOPE", default_autoscale=False)
         #FIXME: move this to base class once get mouseover support in striptool
         children = display['children']
+        mouse_over = self.params.get(Scope.MOUSE_OVER, default=False)
         newchildren = [
-            { "name" : "Mouse Over", "type": "bool", "value": False }
+            { "name" : "Mouse Over", "type": "bool", "value": mouse_over }
             ]
         children.extend(newchildren)
         
         return display
 
     def assemble_acquisition(self, section=None):
-        buffer_unit = 'samples'
-        try:
-            buffer_unit = section["BUFFERUNIT"]
-        except:
-            pass
-
-        if buffer_unit.lower() not in ["samples", "objects"]:
-            buffer_unit = 'samples'
-
+        buffer_unit = self.params.get(Scope.BUFFER_UNIT, default='samples')
         buffer_unit = buffer_unit.title()
 
         acquisition = super().assemble_acquisition(section, buffer_unit=buffer_unit)
         children = acquisition['children']
 
-        start = False
-        if section:
-            start = section.getboolean('ConnectOnStart', False)
+        start = self.params.get(Scope.CONNECT_ON_START, False)
 
-        pv = None
         if self.pvs is not None:
             pv = list(self.pvs.values())[0]
-
-        if section:
-            if pv is None:
-                # it means PV map is not specified from command line
-                # get one from configuration
-                pv = pv if pv is not None else section.get("PV", None)
-                if pv is not None:
-                    # if PV is available by default
-                    self.pvs = {pv: pv}
+        else:
+            # it means PV map is not specified from command line
+            # get one from configuration
+            pv = self.params.get(Scope.PV)
+            # if PV is available by default
+            self.pvs = {pv: pv}
 
         newchildren = [
             {"name": "Buffer Unit", "type": "list", "limits": ["Samples", "Objects"],
@@ -173,14 +153,19 @@ class Configure(ScopeConfigureBase):
         id_value = ["None"]
         if self.default_arrayid != "None":
             id_value.append(self.default_arrayid)
+
         axes = ["None"]
-        self.default_xaxes = section.get("XAXES", "None") if section else "None"
         if self.default_xaxes != "None":
             axes.append(self.default_xaxes)
 
-        self.default_major_tick = section.getint('MAJORTICKS', 0) if section else 0
-        self.default_minor_tick = section.getint('MINORTICKS', 0) if section else 0
-        
+        self.default_major_tick = self.params.get(Scope.MAJORTICKS, 0)
+        self.default_minor_tick = self.params.get(Scope.MINORTICKS, 0)
+
+        # Load extra display fields from config
+        extra_fields = self.params.get(Scope.EXTRA_DISPLAY_FIELDS, [])
+
+        mo_display_loc = self.params.get(Scope.MOUSE_OVER_DISPLAY_LOCATION, 'bottom_right').replace('_', '-')
+
         cfg = {"name": "Config",
                "type": "group",
                "expanded": True,
@@ -189,9 +174,9 @@ class Configure(ScopeConfigureBase):
                    {"name": "X Axes", "type": "list", "limits": axes, "value": self.default_xaxes},
                    {"name": "Major Ticks", "type": "int", "value": self.default_major_tick, 'decimals':20},
                    {"name": "Minor Ticks", "type": "int", "value": self.default_minor_tick, 'decimals':20},
-                   {"name": "Extra Display Fields", "type": "checklist", "limits":[], "expanded": False},
-                   {"name": "MO Disp Location", "type": "list", "limits":['top-right', 'bottom-right', 'bottom-left'], "value" : "bottom-right"}
-                   
+                   {"name": "Extra Display Fields", "type": "checklist", "value": extra_fields, "limits": extra_fields, "expanded": False},
+                   {"name": "MO Disp Location", "type": "list", "limits": ['top-right', 'bottom-right', 'bottom-left'], "value": mo_display_loc}
+
                    ]
                }
         return cfg
@@ -201,40 +186,12 @@ class Configure(ScopeConfigureBase):
 
         :return:
         """
-        try:
-            sections = self.params["SCOPE"]["SECTION"].split(",")
-            for idx, section in enumerate(sections):
-                # remove unnecessary space
-                sections[idx] = section.strip() 
-            if "ACQUISITION" in sections:
-                acquisition = self.assemble_acquisition(self.params["ACQUISITION"])
-            else:
-                acquisition = self.assemble_acquisition()
-            if "DISPLAY" in sections:
-                display = self.assemble_display(self.params["DISPLAY"])
-            else:
-                display = self.assemble_display()
-            if "CHANNELS" in sections:
-                channel = self.assemble_channel(self.params["CHANNELS"])
-            else:
-                channel = self.assemble_channel()
-            if "TRIGGER" in sections:
-                trigger = self.assemble_trigger(self.params["TRIGGER"])
-            else:
-                trigger = self.assemble_trigger()
-            if "CONFIG" in sections:
-                cfg = self.assemble_config(self.params["CONFIG"])
-            else:
-                cfg = self.assemble_config()
-                                           
-        except KeyError as e:
-            if str(e) not in ["'SCOPE'"]:
-                logging.getLogger().warning('Key %s not found in config' %  (str(e)))
-            acquisition = self.assemble_acquisition()
-            display = self.assemble_display()
-            channel = self.assemble_channel()
-            trigger = self.assemble_trigger()
-            cfg = self.assemble_config()
+        
+        acquisition = self.assemble_acquisition()
+        display = self.assemble_display()
+        channel = self.assemble_channel()
+        trigger = self.assemble_trigger()
+        cfg = self.assemble_config()
 
         # line up in order
         paramcfg = [acquisition, trigger, display, cfg]

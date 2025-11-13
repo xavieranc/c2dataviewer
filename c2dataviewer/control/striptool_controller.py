@@ -15,9 +15,10 @@ from ..view import *
 from .scope_controller_base import ScopeControllerBase
 from ..view.scope_display import PlotChannel as ScopePlotChannel
 from pyqtgraph.parametertree import Parameter
-from .striptool_config import StriptoolConfig
+from .striptoolconfig import StripToolConfigure
 from .pvconfig import PvConfig
 from pyqtgraph.Qt import QtCore
+from .config import Serializer, Striptool, AppType
 
 class PvScopeItem:
     def __init__(self, props, controller):
@@ -90,9 +91,8 @@ class StripToolController(ScopeControllerBase):
                  **kwargs):
 
         super().__init__(widget, model, parameters, warning, **kwargs)
-        st_config = StriptoolConfig(cfg, **kwargs)
         self._pvedit_dialog = PvEditDialogController(pvedit_widget, model,
-                                                     default_proto=st_config.default_proto)
+                                                     default_proto=cfg.default_proto)
         self._win.editPvButton.clicked.connect(self._on_pvedit_click)
         
         # Signal to update status when connection changes
@@ -108,10 +108,11 @@ class StripToolController(ScopeControllerBase):
         if not self._win.graphicsWidget.max_length:
             self.update_buffer_samples(int(60000 / self.refresh))
 
-        self._win.graphicsWidget.enable_sampling_mode(True)
+        # Apply Sample Mode from config
+        sample_mode = self.parameters.child("Acquisition", "Sample Mode").value()
+        self._win.graphicsWidget.enable_sampling_mode(sample_mode)
         self._pvedit_dialog.set_completion_callback(self.pv_edit_callback)
-        self._init_pvlist(st_config.pvs.values())
-
+        self._init_pvlist(cfg.pvs.values())
         self.start_plotting()
         
     def _init_pvlist(self, pvconfig):
@@ -238,6 +239,46 @@ class StripToolController(ScopeControllerBase):
                 si.channel.axis_location = data
 
         self._setup_plot()
+
+
+    def serialize(self, cfile):
+        """
+        Serialize the current striptool configuration to an IO object.
+
+        :param cfile: IO object (file-like) to write configuration to
+        """
+
+        serializer = Serializer()
+
+        # Write app identifier
+        serializer.set_app(AppType.STRIPTOOL)
+
+        # Write striptool-specific settings
+        if hasattr(self._pvedit_dialog, 'default_proto') and self._pvedit_dialog.default_proto:
+            serializer.set(Striptool.DEFAULT_PROTOCOL, self._pvedit_dialog.default_proto)
+
+        # Serialize base scope configuration (Display, Acquisition, Trigger)
+        self.serialize_scope_config(serializer)
+
+        # Serialize striptool-specific acquisition settings
+        sample_mode = self.parameters.child("Acquisition", "Sample Mode").value()
+        serializer.set(Striptool.SAMPLEMODE, str(sample_mode))
+
+        # Serialize PV/channel configurations
+        chan_cfgs = []
+        for pvname, si in self.pvdict.items():
+            pv_str = f'{str(si.proto).lower()}://{pvname}'
+
+            chan_cfg = {
+                'pv': pv_str,
+                'color': si.channel.color
+            }
+            chan_cfgs.append(chan_cfg)
+
+        serializer.write_channels('STRIPTOOL', chan_cfgs)
+
+        # Write to file
+        serializer.write(cfile)
 
     def set_sampling_mode(self, val):
         self._win.graphicsWidget.enable_sampling_mode(val)

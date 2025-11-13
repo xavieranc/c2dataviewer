@@ -9,6 +9,7 @@ source:
 
 build:
   number: 0
+  noarch: python
   entry_points:
     - c2dv = c2dataviewer.c2dv:main
 
@@ -19,14 +20,17 @@ test:
     - test
 
 requirements:
-  build:
-    - python 
+  host:
+    - python
+    - setuptools
+    - pip
+    
   run:
     - python
     - pyqt
     - psutil
     - pvapy
-    - pyqtgraph>=0.12
+    - pyqtgraph=0.13
     # The following modules are required for viewing compressed images and
     # must be installed separately.
     #- python-blosc

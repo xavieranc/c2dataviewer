@@ -12,7 +12,8 @@ from pyqtgraph.Qt import uic
 from pyqtgraph.parametertree import Parameter
 from .model import DataSource as DataReceiver
 from .control import StripToolController
-from .view import StripToolConfigure
+
+from .control.striptoolconfig import StripToolConfigure
 
 form_path = os.path.join(os.path.dirname(__file__), "ui/striptool.ui")
 form_class = uic.loadUiType(form_path)[0]
@@ -57,7 +58,7 @@ def striptool(cfg, **kwargs):
         name="params", type="group", children=configure.parse())
     w.parameterPane.setParameters(parameters, showTop=False)
 
-    controller = StripToolController(w, model, pvedit_dialog, warning, parameters, cfg, **kwargs)
+    controller = StripToolController(w, model, pvedit_dialog, warning, parameters, configure, **kwargs)
     parameters.sigTreeStateChanged.connect(controller.parameter_change)
     
     w.show()

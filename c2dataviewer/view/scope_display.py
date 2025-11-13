@@ -157,7 +157,7 @@ class Trigger:
         self.is_triggered_ = True
         self.trigger_data_done = False
 
-        if self.trigger_time_field in data:
+        if self.trigger_time_field is not None and self.trigger_time_field in data:
             ts = data[self.trigger_time_field]
             self.trigger_timestamp = ts['secondsPastEpoch'] + 1e-9*ts['nanoseconds']
         else:

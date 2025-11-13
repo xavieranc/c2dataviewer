@@ -67,7 +67,7 @@ class ScopeController(ScopeControllerBase):
         self.buffer_unit = 'Samples'
         self.object_size = None
         self.object_size_tally = []
-        
+
     def default_config(self, **kwargs):
         """
         Update configuration based on commmand-line arguments
@@ -117,7 +117,16 @@ class ScopeController(ScopeControllerBase):
                 
         child = self.parameters.child("Config").child("MO Disp Location")
         self._win.graphicsWidget.set_mouseover_display_location(child.value())
-        
+
+        # Apply Mouse Over setting from config
+        mouse_over = self.parameters.child("Display").child("Mouse Over").value()
+        self._win.graphicsWidget.set_enable_mouseover(mouse_over)
+
+        # Apply Extra Display Fields from config
+        extra_fields = self.parameters.child("Config").child("Extra Display Fields").value()
+        if extra_fields:
+            self._win.graphicsWidget.set_mouseover_fields(extra_fields)
+
         if start:
             self.start_plotting()            
             
@@ -208,7 +217,12 @@ class ScopeController(ScopeControllerBase):
             self.set_xaxes(child.value())
                 
         child = self.parameters.child("Trigger").child("Data Time Field")
+        # Preserve current value before updating limits
+        current_value = child.value()
         child.setLimits(fdr)
+        # Restore value if it's still valid
+        if current_value != 'None' and current_value in fdr:
+            child.setValue(current_value)
         if child.value() != 'None':
             self._win.graphicsWidget.trigger.data_time_field = child.value()
         
@@ -221,7 +235,14 @@ class ScopeController(ScopeControllerBase):
                 self.set_channel_data(chan_name, 'Field', c.value())
 
         child = self.parameters.child('Config').child('Extra Display Fields')
+        # Preserve current values before updating limits
+        current_values = child.value()
         child.setLimits(fdr_all)
+        # Restore values that are still valid
+        if current_values:
+            valid_values = [v for v in current_values if v in fdr_all]
+            if valid_values:
+                child.setValue(valid_values)
             
     def __failed_connection_callback(self, flag):
         """
@@ -498,3 +519,86 @@ class ScopeController(ScopeControllerBase):
             avg_obj_size = statistics.mean(self.object_size_tally)
             self.parameters.child("Statistics").child('Avg Samples/Obj').setValue(avg_obj_size)
             self.set_object_size(math.ceil(avg_obj_size))
+
+    def serialize(self, cfile):
+        """
+        Serialize the current scope configuration to an IO object.
+
+        :param cfile: IO object (file-like) to write configuration to
+        """
+        from .config import Serializer, AppType, Scope
+
+        serializer = Serializer()
+
+        # Write app identifier
+        serializer.set_app(AppType.SCOPE)
+
+        # Serialize base scope configuration (Display, Acquisition, Trigger)
+        # This includes buffer unit and buffer size
+        self.serialize_scope_config(serializer)
+
+        # Serialize scope-specific settings
+        pv = self.parameters.child("Acquisition", "PV").value()
+        if pv:
+            serializer.set(Scope.PV, pv)
+
+        start = self.parameters.child("Acquisition", "Start").value()
+        serializer.set(Scope.CONNECT_ON_START, start)
+
+        # Serialize Display settings
+        mouse_over = self.parameters.child("Display", "Mouse Over").value()
+        serializer.set(Scope.MOUSE_OVER, mouse_over)
+
+        # Serialize Config settings
+        arrayid = self.parameters.child("Config", "ArrayId").value()
+        if arrayid and arrayid != "None":
+            serializer.set(Scope.ARRAYID, arrayid)
+
+        xaxes = self.parameters.child("Config", "X Axes").value()
+        if xaxes and xaxes != "None":
+            serializer.set(Scope.XAXES, xaxes)
+
+        major_ticks = self.parameters.child("Config", "Major Ticks").value()
+        if major_ticks:
+            serializer.set(Scope.MAJORTICKS, major_ticks)
+
+        minor_ticks = self.parameters.child("Config", "Minor Ticks").value()
+        if minor_ticks:
+            serializer.set(Scope.MINORTICKS, minor_ticks)
+
+        extra_fields = self.parameters.child("Config", "Extra Display Fields").value()
+        if extra_fields:
+            serializer.set(Scope.EXTRA_DISPLAY_FIELDS, ','.join(extra_fields))
+
+        mo_location = self.parameters.child("Config", "MO Disp Location").value()
+        if mo_location:
+            serializer.set(Scope.MOUSE_OVER_DISPLAY_LOCATION, mo_location)
+
+        # Serialize channel configurations
+        chan_cfgs = []
+        for idx, channel in enumerate(self.channels):
+            chan_num = idx + 1
+            chan_param = self.parameters.child(f"Channel {chan_num}")
+
+            field = chan_param.child("Field").value()
+            if field and field != "None":
+                chan_cfg = {
+                    'field': field,
+                    'color': channel.color
+                }
+
+                dc_offset = chan_param.child("DC offset").value()
+                if dc_offset != 0:
+                    chan_cfg['dcoffset'] = dc_offset
+
+                axis_location = chan_param.child("Axis location").value()
+                if axis_location:
+                    chan_cfg['axislocation'] = axis_location
+
+                chan_cfgs.append(chan_cfg)
+
+        if chan_cfgs:
+            serializer.write_channels('CHANNELS', chan_cfgs)
+
+        # Write to file
+        serializer.write(cfile)

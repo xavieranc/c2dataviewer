@@ -19,7 +19,9 @@ import psutil
 from pyqtgraph.Qt import QtWidgets
 from pyqtgraph.Qt import uic
 from pyqtgraph.parametertree import Parameter
-from .view import Configure
+
+# Updated import: Configure now lives in control.scopeconfig
+from .control.scopeconfig import Configure
 from .model import DataSource as DataReceiver
 from .control import ScopeController
 
