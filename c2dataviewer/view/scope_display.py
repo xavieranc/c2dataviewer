@@ -300,7 +300,7 @@ class Trigger:
             pass
 
 class MouseOver:
-        
+
     def __init__(self, widget):
         self.display_fields = []
         self.widget = widget
@@ -310,6 +310,7 @@ class MouseOver:
         self.enabled = False
         self.display_location = None
         self.mouse_index = None
+        self.highlight_points = []  # ScatterPlotItems for highlighting points
         
     def setup_plot(self):
         assert(self.widget.plot)
@@ -318,6 +319,18 @@ class MouseOver:
         self.vline = pyqtgraph.InfiniteLine(angle=90, movable=False)
         self.hline = pyqtgraph.InfiniteLine(angle=0, movable=False)
 
+        # Clear any existing highlight points
+        for point in self.highlight_points:
+            self.widget.plot.removeItem(point)
+        self.highlight_points = []
+
+        # Create highlight point markers for each channel
+        for ch in self.widget.channels:
+            if ch.pvname != "None":
+                highlight = pyqtgraph.ScatterPlotItem(size=10, pen=pyqtgraph.mkPen(None),
+                                                     brush=pyqtgraph.mkBrush(ch.color))
+                self.highlight_points.append(highlight)
+
         self.enable(self.enabled)
         
     def enable(self, flag):
@@ -325,19 +338,27 @@ class MouseOver:
         if flag:
             self.widget.plot.addItem(self.vline, ignoreBounds=True)
             self.widget.plot.addItem(self.hline, ignoreBounds=True)
+            for highlight in self.highlight_points:
+                self.widget.plot.addItem(highlight, ignoreBounds=True)
             self.textbox.setParentItem(self.widget.plot)
             self._apply_display_location()
             self.textbox.show()
             self.vline.show()
             self.hline.show()
+            for highlight in self.highlight_points:
+                highlight.show()
         else:
             self.widget.plot.removeItem(self.vline)
             self.widget.plot.removeItem(self.hline)
+            for highlight in self.highlight_points:
+                self.widget.plot.removeItem(highlight)
             self.textbox.setParentItem(None)
 
             self.textbox.hide()
             self.vline.hide()
             self.hline.hide()
+            for highlight in self.highlight_points:
+                highlight.hide()
             
     def set_display_fields(self, fields):
         self.display_fields = fields
@@ -369,7 +390,7 @@ class MouseOver:
                 continue
             if ch.pvname not in self.widget.data:
                 continue
-            
+
             channel_data[ch.pvname] = [self.widget.data.get(ch.pvname), ch.color]
             nsamples = max(nsamples, len(channel_data[ch.pvname][0]))
 
@@ -382,26 +403,52 @@ class MouseOver:
                 nsamples = max(nsamples, len(channel_data[f][0]))
             except:
                 pass
-            
+
         if len(channel_data) == 0:
             return
 
         if index >= 0 and index < nsamples:
             text = []
             xaxis = self.widget.current_xaxes
+            xvalue = index  # default x value
             if xaxis == 'None':
                 text.append(f"x={index}")
             else:
                 xaxis_data = self.widget.data.get(xaxis)
                 xaxis_value = xaxis_data[index] if xaxis_data is not None and index < len(xaxis_data) else 'N/A'
+                if xaxis_data is not None and index < len(xaxis_data):
+                    xvalue = xaxis_data[index]
                 text.append(f"{xaxis}={xaxis_value}")
-                
+
+            # Update highlight points for each channel
+            highlight_idx = 0
+            for ch in self.widget.channels:
+                if ch.pvname == 'None':
+                    continue
+                if ch.pvname not in self.widget.data:
+                    continue
+
+                data = self.widget.data.get(ch.pvname)
+                if data is not None and index < len(data) and highlight_idx < len(self.highlight_points):
+                    yvalue = data[index] + ch.dc_offset
+                    # For time-based x-axis, adjust x position
+                    if xaxis != 'None' and xaxis in self.widget.data:
+                        xaxis_data = self.widget.data.get(xaxis)
+                        if xaxis_data is not None and len(xaxis_data) > 0:
+                            xpos = xvalue - xaxis_data[0]
+                        else:
+                            xpos = index
+                    else:
+                        xpos = index
+                    self.highlight_points[highlight_idx].setData([xpos], [yvalue])
+                    highlight_idx += 1
+
             for k,v in channel_data.items():
                 data = v[0]
                 color = v[1]
                 data_value = data[index] if data is not None and index <len(data) else 'N/A'
                 text.append(f"<span style='color: {color}'>{k}={data_value}</span>")
-                
+
             text = "<br>".join(text)
             self.textbox.setText(text)
         
