@@ -392,7 +392,9 @@ class MouseOver:
             if xaxis == 'None':
                 text.append(f"x={index}")
             else:
-                text.append(f"{xaxis}={self.widget.data.get(xaxis)}")
+                xaxis_data = self.widget.data.get(xaxis)
+                xaxis_value = xaxis_data[index] if xaxis_data is not None and index < len(xaxis_data) else 'N/A'
+                text.append(f"{xaxis}={xaxis_value}")
                 
             for k,v in channel_data.items():
                 data = v[0]
@@ -1243,6 +1245,8 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         # Do not update the drawing if image is frozen
         if self.is_freeze:
+            # Still update mouse over textbox when frozen so user can see values
+            self.mouse_over.update_textbox()
             return
 
         # Take ownership the self.data variable which holds all the waveforms
