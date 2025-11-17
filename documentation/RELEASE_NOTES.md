@@ -1,3 +1,8 @@
+# Release 1.15.1 (11/17/2025)
+- highlight mouse over points in plot
+- fix xaxes config setting
+- several fixes to support mouse over when xaxes is set
+
 # Release 1.15.0 (11/12/2025)
 - upgraded to pyqtgraph 0.13
 - refactored configuration code, implemented configuration for rest of striptool and scope app settings
