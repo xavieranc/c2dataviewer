@@ -37,10 +37,10 @@ class Configure(ScopeConfigureBase):
         
         self.default_arrayid = kwargs.get("arrayid", None)
         if not self.default_arrayid:
-            self.default_arrayid = self.params.get(Scope.ARRAYID, 'None').capitalize()
+            self.default_arrayid = self.params.get(Scope.ARRAYID, 'None')
         self.default_xaxes = kwargs.get("xaxes", "None")
         if not self.default_xaxes:
-            self.default_xaxes = self.params.get(Scope.XAXES, 'None').capitalize()
+            self.default_xaxes = self.params.get(Scope.XAXES, 'None')
         
 
         

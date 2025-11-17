@@ -415,9 +415,15 @@ class MouseOver:
                 text.append(f"x={index}")
             else:
                 xaxis_data = self.widget.data.get(xaxis)
-                xaxis_value = xaxis_data[index] if xaxis_data is not None and index < len(xaxis_data) else 'N/A'
+                if xaxis_data is not None and index < len(xaxis_data):
+                    xaxis_value = xaxis_data[index]
+                else:
+                    xaxis_value = 'N/A'
+                
                 if xaxis_data is not None and index < len(xaxis_data):
                     xvalue = xaxis_data[index]
+                    
+
                 text.append(f"{xaxis}={xaxis_value}")
 
             # Update highlight points for each channel
@@ -456,16 +462,30 @@ class MouseOver:
         if not self.enabled:
             return
         pos = event.pos()
-                
+
         if not self.widget.plot.sceneBoundingRect().contains(pos):
             return
 
         mousePoint = self.widget.plot.vb.mapSceneToView(pos)
-        self.mouse_index = int(mousePoint.x())
+        mouse_x = mousePoint.x()
+
+        # When xaxes is set, convert plot x-coordinate back to array index
+        if self.widget.current_xaxes != "None" and self.widget.current_xaxes in self.widget.data:
+            xaxis_data = self.widget.data.get(self.widget.current_xaxes)
+            if xaxis_data is not None and len(xaxis_data) > 0:
+                # Plot shows (time - time[0]), so add back the offset
+                actual_x_value = mouse_x + xaxis_data[0]
+                # Find the closest index in the xaxis data
+                self.mouse_index = int(np.argmin(np.abs(xaxis_data - actual_x_value)))
+            else:
+                self.mouse_index = int(mouse_x)
+        else:
+            # No xaxes set, x-coordinate is the array index
+            self.mouse_index = int(mouse_x)
 
         self.update_textbox()
-        
-        self.vline.setPos(mousePoint.x())
+
+        self.vline.setPos(mouse_x)
         self.hline.setPos(mousePoint.y())
             
 class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
@@ -589,11 +609,12 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         """
         self.current_xaxes = value
         self.new_plot = True
-            
+
         if self.current_xaxes == "None":
             self.plot.setLabel('bottom', '')
         else:
-            self.plot.setLabel('bottom', self.current_xaxes)
+            # Capitalize the label for display purposes
+            self.plot.setLabel('bottom', self.current_xaxes.capitalize())
 
     def set_enable_mouseover(self, value):
         self.mouse_over.enable(value)
