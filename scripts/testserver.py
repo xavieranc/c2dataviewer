@@ -42,7 +42,7 @@ class RandomGenerator:
         self.max = max
 
     def calc(self):
-        return random.uniform(min, max)
+        return random.uniform(self.min, self.max)
 
 def get_time_stamp(time_stamp=None):
     """
