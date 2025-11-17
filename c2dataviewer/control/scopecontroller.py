@@ -87,11 +87,16 @@ class ScopeController(ScopeControllerBase):
         
         super().default_config(**kwargs, buffer_unit=self.buffer_unit)
         self.auto_buffer_size = not self.parameters.child("Acquisition").child("Buffer (%s)" % self.buffer_unit).value()
-        
-        if kwargs['arrayid']:
-            self.set_arrayid(kwargs["arrayid"])
-        if kwargs['xaxes']:
-            self.set_xaxes(kwargs['xaxes'])
+
+        # Apply arrayid from command-line or config file
+        arrayid = kwargs.get('arrayid') or self.parameters.child("Config").child("ArrayId").value()
+        if arrayid and arrayid != "None":
+            self.set_arrayid(arrayid)
+
+        # Apply xaxes from command-line or config file
+        xaxes = kwargs.get('xaxes') or self.parameters.child("Config").child("X Axes").value()
+        if xaxes and xaxes != "None":
+            self.set_xaxes(xaxes)
             
         self._win.graphicsWidget.set_range(**kwargs)
 
