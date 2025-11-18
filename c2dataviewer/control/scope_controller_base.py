@@ -169,7 +169,7 @@ class ScopeControllerBase:
                 elif childName == "Acquisition.Buffer (Samples)":
                     self._win.graphicsWidget.update_buffer(data)
                 elif childName == "Acquisition.Freeze":
-                    self._win.graphicsWidget.is_freeze = data
+                    self._win.graphicsWidget.set_is_freeze(data)
                 elif childName == "Display.Mode":
                     self.set_display_mode(data)
                 elif childName == "Display.FFT filter":

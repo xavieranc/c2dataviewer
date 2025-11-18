@@ -310,7 +310,8 @@ class MouseOver:
         self.enabled = False
         self.display_location = None
         self.mouse_index = None
-        self.highlight_points = []  # ScatterPlotItems for highlighting points
+        self.highlight_points = [] 
+        self.data_cache = {}
         
     def setup_plot(self):
         assert(self.widget.plot)
@@ -377,6 +378,13 @@ class MouseOver:
         self.display_location = loc
         self._apply_display_location()
 
+    def populate_cache(self):
+        for ch in self.widget.channels:
+            if ch.pvname == 'None' or ch.pvname not in self.widget.data:
+                continue
+            field = ch.pvname
+            self.data_cache[field] = self.widget.data.get(field)
+    
     def update_textbox(self):
         if self.mouse_index is None or not self.enabled:
             return
@@ -385,20 +393,23 @@ class MouseOver:
         channel_data = {}
         nsamples = 0
 
+        if len(self.data_cache) == 0:
+            self.populate_cache()
+            
         for ch in self.widget.channels:
             if ch.pvname == 'None':
                 continue
             if ch.pvname not in self.widget.data:
                 continue
 
-            channel_data[ch.pvname] = [self.widget.data.get(ch.pvname), ch.color]
+            channel_data[ch.pvname] = [self.data_cache.get(ch.pvname), ch.color]
             nsamples = max(nsamples, len(channel_data[ch.pvname][0]))
 
         for f in self.display_fields:
             if f in channel_data:
                 continue
-
-            channel_data[f] = [self.widget.data.get(f), '#FFFFFF']
+            
+            channel_data[f] = [self.data_cache.get(f), '#FFFFFF']
             try:
                 nsamples = max(nsamples, len(channel_data[f][0]))
             except:
@@ -407,14 +418,15 @@ class MouseOver:
         if len(channel_data) == 0:
             return
 
+        xaxis = self.widget.current_xaxes
+        xaxis_data = self.data_cache.get(xaxis) if xaxis != 'None' else None
+        
         if index >= 0 and index < nsamples:
             text = []
-            xaxis = self.widget.current_xaxes
             xvalue = index  # default x value
             if xaxis == 'None':
                 text.append(f"x={index}")
             else:
-                xaxis_data = self.widget.data.get(xaxis)
                 if xaxis_data is not None and index < len(xaxis_data):
                     xaxis_value = xaxis_data[index]
                 else:
@@ -434,12 +446,11 @@ class MouseOver:
                 if ch.pvname not in self.widget.data:
                     continue
 
-                data = self.widget.data.get(ch.pvname)
+                data = self.data_cache.get(ch.pvname)
                 if data is not None and index < len(data) and highlight_idx < len(self.highlight_points):
                     yvalue = data[index] + ch.dc_offset
                     # For time-based x-axis, adjust x position
                     if xaxis != 'None' and xaxis in self.widget.data:
-                        xaxis_data = self.widget.data.get(xaxis)
                         if xaxis_data is not None and len(xaxis_data) > 0:
                             xpos = xvalue - xaxis_data[0]
                         else:
@@ -565,6 +576,9 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         self.is_freeze = False
 
+    def set_is_freeze(self, flag: bool):
+        self.is_freeze = flag
+        
     def trigger_mode(self):
         return self.trigger.trigger_mode
 
@@ -1313,12 +1327,12 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         # Do not update the drawing if image is frozen
         if self.is_freeze:
-            # Still update mouse over textbox when frozen so user can see values
-            self.mouse_over.update_textbox()
             return
 
         # Take ownership the self.data variable which holds all the waveforms
         self.wait()
+        
+        self.mouse_over.populate_cache()
 
         if self.sampling_mode:
             max_samples = min(max([0] + [len(v) for v in self.data.values()]) + 1, self.max_length)
