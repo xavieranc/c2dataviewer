@@ -1,3 +1,6 @@
+# Release 1.15.2 (11/25/2025)
+- Fix bug to make sure mouse over data match plot
+
 # Release 1.15.1 (11/17/2025)
 - highlight mouse over points in plot
 - fix xaxes config setting
