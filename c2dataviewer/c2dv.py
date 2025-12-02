@@ -17,7 +17,6 @@ PVA object viewer utilities
 
 import os
 import sys
-import pkg_resources
 import argparse
 from configparser import ConfigParser
 import enum
@@ -44,12 +43,6 @@ if qxl_module_loaded():
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
-
-# Get the version number used by setup.py at package build time
-try:
-    __version__ = pkg_resources.get_distribution('C2DataViewer').version
-except pkg_resources.DistributionNotFound:
-    __version__ = 'Unknown'
 
 
 def load_config(N=None):

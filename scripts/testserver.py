@@ -29,19 +29,20 @@ COLOR_MODE_RGB3 = 4  # [NX, NY, 3]
 class LinearGenerator:
     def __init__(self, offset, size):
         self.offset = offset
-        self.x = 0
+        self.x = -1
         self.size = size
     def calc(self):
-        self.x += 1
+        self.x += 1                
         self.x = self.x % self.size
         return self.x + self.offset
 
 class RandomGenerator:
-    def __init__(self):
-        pass
+    def __init__(self, min=0, max=100):
+        self.min = min
+        self.max = max
 
     def calc(self):
-        return random.uniform(0, 100)
+        return random.uniform(self.min, self.max)
 
 def get_time_stamp(time_stamp=None):
     """
@@ -193,12 +194,24 @@ def run_scope(args):
     delay = 1/args.pvrate
     nsamples = args.wflen
     sample_time_interval = delay / nsamples
+
+    # Set up waveform generators
+    wftype = args.wftype
+    if wftype == WaveformType.LINEAR:
+        gen_x = LinearGenerator(0, nsamples)
+        gen_y = LinearGenerator(10, nsamples)
+    else:
+        gen_x = RandomGenerator()
+        gen_y = RandomGenerator()
+
     while(True):
         objectTime = float(time.time())
         time.sleep(delay)
         times = [ i*sample_time_interval + objectTime for i in range(0, nsamples) ]
-        x = [ random.uniform(-i, i) for i in range(0, nsamples) ]
-        y = [ random.uniform(-i, i) for i in range(0, nsamples) ]
+
+        x = [ gen_x.calc() for _ in range(nsamples) ]
+        y = [ gen_y.calc() for _ in range(nsamples) ]
+
         names = [ 'val'+str(i) for i in range(0, nsamples) ]
         pv = pva.PvObject(schema, {'obj1':{'x':x, 'y':y}, 'obj2': {'x':x, 'y':y},
                                    'objectTime': objectTime, 'time' : times, 'names': names})
@@ -258,6 +271,7 @@ if __name__ == "__main__":
     scope.add_argument('--trigger-interval', help='Fires at given interval in seconds', dest='trigger_interval', default=1, type=float)
     scope.add_argument('--pv-rate', help='PV update rate', dest='pvrate', default=2, type=float)
     scope.add_argument('--waveform-length', help='Waveform length', dest='wflen', default=100, type=int)
+    scope.add_argument('--waveform-type', dest='wftype', default=WaveformType.RANDOM, type=WaveformType, choices=list(WaveformType))
     image = subparsers.add_parser('image', help='Test server for image app')
     image.add_argument('pvname', help='PV name for image channel')
     image.add_argument('--width', help='Image width in pixels', default=512, type=int)

@@ -300,7 +300,7 @@ class Trigger:
             pass
 
 class MouseOver:
-        
+
     def __init__(self, widget):
         self.display_fields = []
         self.widget = widget
@@ -310,6 +310,8 @@ class MouseOver:
         self.enabled = False
         self.display_location = None
         self.mouse_index = None
+        self.highlight_points = [] 
+        self.data_cache = {}
         
     def setup_plot(self):
         assert(self.widget.plot)
@@ -318,6 +320,18 @@ class MouseOver:
         self.vline = pyqtgraph.InfiniteLine(angle=90, movable=False)
         self.hline = pyqtgraph.InfiniteLine(angle=0, movable=False)
 
+        # Clear any existing highlight points
+        for point in self.highlight_points:
+            self.widget.plot.removeItem(point)
+        self.highlight_points = []
+
+        # Create highlight point markers for each channel
+        for ch in self.widget.channels:
+            if ch.pvname != "None":
+                highlight = pyqtgraph.ScatterPlotItem(size=10, pen=pyqtgraph.mkPen(None),
+                                                     brush=pyqtgraph.mkBrush(ch.color))
+                self.highlight_points.append(highlight)
+
         self.enable(self.enabled)
         
     def enable(self, flag):
@@ -325,19 +339,27 @@ class MouseOver:
         if flag:
             self.widget.plot.addItem(self.vline, ignoreBounds=True)
             self.widget.plot.addItem(self.hline, ignoreBounds=True)
+            for highlight in self.highlight_points:
+                self.widget.plot.addItem(highlight, ignoreBounds=True)
             self.textbox.setParentItem(self.widget.plot)
             self._apply_display_location()
             self.textbox.show()
             self.vline.show()
             self.hline.show()
+            for highlight in self.highlight_points:
+                highlight.show()
         else:
             self.widget.plot.removeItem(self.vline)
             self.widget.plot.removeItem(self.hline)
+            for highlight in self.highlight_points:
+                self.widget.plot.removeItem(highlight)
             self.textbox.setParentItem(None)
 
             self.textbox.hide()
             self.vline.hide()
             self.hline.hide()
+            for highlight in self.highlight_points:
+                highlight.hide()
             
     def set_display_fields(self, fields):
         self.display_fields = fields
@@ -356,6 +378,13 @@ class MouseOver:
         self.display_location = loc
         self._apply_display_location()
 
+    def populate_cache(self):
+        for ch in self.widget.channels:
+            if ch.pvname == 'None' or ch.pvname not in self.widget.data:
+                continue
+            field = ch.pvname
+            self.data_cache[field] = self.widget.data.get(field)
+    
     def update_textbox(self):
         if self.mouse_index is None or not self.enabled:
             return
@@ -364,42 +393,79 @@ class MouseOver:
         channel_data = {}
         nsamples = 0
 
+        if len(self.data_cache) == 0:
+            self.populate_cache()
+            
         for ch in self.widget.channels:
             if ch.pvname == 'None':
                 continue
             if ch.pvname not in self.widget.data:
                 continue
-            
-            channel_data[ch.pvname] = [self.widget.data.get(ch.pvname), ch.color]
+
+            channel_data[ch.pvname] = [self.data_cache.get(ch.pvname), ch.color]
             nsamples = max(nsamples, len(channel_data[ch.pvname][0]))
 
         for f in self.display_fields:
             if f in channel_data:
                 continue
-
-            channel_data[f] = [self.widget.data.get(f), '#FFFFFF']
+            
+            channel_data[f] = [self.data_cache.get(f), '#FFFFFF']
             try:
                 nsamples = max(nsamples, len(channel_data[f][0]))
             except:
                 pass
-            
+
         if len(channel_data) == 0:
             return
 
+        xaxis = self.widget.current_xaxes
+        xaxis_data = self.data_cache.get(xaxis) if xaxis != 'None' else None
+        
         if index >= 0 and index < nsamples:
             text = []
-            xaxis = self.widget.current_xaxes
+            xvalue = index  # default x value
             if xaxis == 'None':
                 text.append(f"x={index}")
             else:
-                text.append(f"{xaxis}={self.widget.data.get(xaxis)}")
+                if xaxis_data is not None and index < len(xaxis_data):
+                    xaxis_value = xaxis_data[index]
+                else:
+                    xaxis_value = 'N/A'
                 
+                if xaxis_data is not None and index < len(xaxis_data):
+                    xvalue = xaxis_data[index]
+                    
+
+                text.append(f"{xaxis}={xaxis_value}")
+
+            # Update highlight points for each channel
+            highlight_idx = 0
+            for ch in self.widget.channels:
+                if ch.pvname == 'None':
+                    continue
+                if ch.pvname not in self.widget.data:
+                    continue
+
+                data = self.data_cache.get(ch.pvname)
+                if data is not None and index < len(data) and highlight_idx < len(self.highlight_points):
+                    yvalue = data[index] + ch.dc_offset
+                    # For time-based x-axis, adjust x position
+                    if xaxis != 'None' and xaxis in self.widget.data:
+                        if xaxis_data is not None and len(xaxis_data) > 0:
+                            xpos = xvalue - xaxis_data[0]
+                        else:
+                            xpos = index
+                    else:
+                        xpos = index
+                    self.highlight_points[highlight_idx].setData([xpos], [yvalue])
+                    highlight_idx += 1
+
             for k,v in channel_data.items():
                 data = v[0]
                 color = v[1]
                 data_value = data[index] if data is not None and index <len(data) else 'N/A'
                 text.append(f"<span style='color: {color}'>{k}={data_value}</span>")
-                
+
             text = "<br>".join(text)
             self.textbox.setText(text)
         
@@ -407,16 +473,30 @@ class MouseOver:
         if not self.enabled:
             return
         pos = event.pos()
-                
+
         if not self.widget.plot.sceneBoundingRect().contains(pos):
             return
 
         mousePoint = self.widget.plot.vb.mapSceneToView(pos)
-        self.mouse_index = int(mousePoint.x())
+        mouse_x = mousePoint.x()
+
+        # When xaxes is set, convert plot x-coordinate back to array index
+        if self.widget.current_xaxes != "None" and self.widget.current_xaxes in self.widget.data:
+            xaxis_data = self.widget.data.get(self.widget.current_xaxes)
+            if xaxis_data is not None and len(xaxis_data) > 0:
+                # Plot shows (time - time[0]), so add back the offset
+                actual_x_value = mouse_x + xaxis_data[0]
+                # Find the closest index in the xaxis data
+                self.mouse_index = int(np.argmin(np.abs(xaxis_data - actual_x_value)))
+            else:
+                self.mouse_index = int(mouse_x)
+        else:
+            # No xaxes set, x-coordinate is the array index
+            self.mouse_index = int(mouse_x)
 
         self.update_textbox()
-        
-        self.vline.setPos(mousePoint.x())
+
+        self.vline.setPos(mouse_x)
         self.hline.setPos(mousePoint.y())
             
 class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
@@ -496,6 +576,9 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         self.is_freeze = False
 
+    def set_is_freeze(self, flag: bool):
+        self.is_freeze = flag
+        
     def trigger_mode(self):
         return self.trigger.trigger_mode
 
@@ -540,11 +623,12 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         """
         self.current_xaxes = value
         self.new_plot = True
-            
+
         if self.current_xaxes == "None":
             self.plot.setLabel('bottom', '')
         else:
-            self.plot.setLabel('bottom', self.current_xaxes)
+            # Capitalize the label for display purposes
+            self.plot.setLabel('bottom', self.current_xaxes.capitalize())
 
     def set_enable_mouseover(self, value):
         self.mouse_over.enable(value)
@@ -1247,6 +1331,8 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         # Take ownership the self.data variable which holds all the waveforms
         self.wait()
+        
+        self.mouse_over.populate_cache()
 
         if self.sampling_mode:
             max_samples = min(max([0] + [len(v) for v in self.data.values()]) + 1, self.max_length)
