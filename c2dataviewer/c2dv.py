@@ -116,6 +116,7 @@ def main():
     parser.add_argument('--pv', type=str,
                         help='EPICS PV names. Support multiple PVs which are comma separated.'
                              ' e.g. PV1,PV2,PV3')
+    parser.add_argument('--pv-ca', type = str, help = 'EPICS PV names for CA mode. Support multiple PVs which are comma separated e.g. PV1,PV2,PV3')
     parser.add_argument('--alias', type=str,
                         help='EPICS PV alias names. Support multiple alias name which are comma separated.'
                              ' e.g. name1,name2,name3')
@@ -143,6 +144,7 @@ def main():
         action='store_true',
         help="Turn on debug messages. Can also turn this on by setting environment variable C2DV_LOG_LEVEL=DEBUG"
     )
+    parser.add_argument('--ca-mode', action = 'store_true', help = 'Activate mode supporting multi-waveforms in Channel Access in scope application.')
 
     args = parser.parse_args()
 
@@ -169,6 +171,9 @@ def main():
     pv_map = None
     if args.pv is not None:
         pv_map = pvmaps(args.pv, args.alias)
+    pv_map_ca = None
+    if args.pv_ca is not None:
+        pv_map_ca = pvmaps(args.pv_ca, args.alias)
 
     app = args.app
     if args.app is None:
@@ -204,7 +209,7 @@ def main():
         scope(cfg, pv=pv_map, arrayid=args.arrayid, xaxes=args.xaxes,
               max=args.max, min=args.min, trigger=args.trigger,
               connect_on_start=args.connect_on_start,
-              fields=args.fields)
+              fields=args.fields, ca_mode = args.ca_mode, pv_ca = pv_map_ca)
     elif app == AppType.STRIPTOOL:
         from c2dataviewer import striptool
         striptool(cfg, pv=pv_map)

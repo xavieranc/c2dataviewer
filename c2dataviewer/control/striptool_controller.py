@@ -26,7 +26,7 @@ class PvScopeItem:
         self.proto = props.proto
         self.channel = ScopePlotChannel(props.pvname, props.color)
         self.parent_controller = controller
-        self.connection = controller.model.create_connection(props.pvname, provider=props.proto)        
+        self.connection = controller.model.create_connection(props.pvname, provider=props.proto, check_connection = False)        
         self.status =  str(self.connection.state)
         self.hide = False
 
@@ -51,7 +51,7 @@ class PvScopeItem:
         if self.proto != props.proto:
             self.stop()
             self.proto = props.proto
-            self.connection = self.parent_controller.model.create_connection(self.pvname, provider=self.proto)
+            self.connection = self.parent_controller.model.create_connection(self.pvname, provider=self.proto, check_connection = False)
             self.connection_changed_callback(self.connection.state, None)
             self.start()
             

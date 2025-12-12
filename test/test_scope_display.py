@@ -350,6 +350,7 @@ class TestScopeDisplay(unittest.TestCase):
         #no data, trigger not happened yet
         self.assertEqual(len(self.pw.data), 0)
         self.assertTrue(self.pw.trigger.is_triggered())
+        self.assertTrue(self.pw.trigger.data_behind)
 
         self.call_data_process({
             'x' : list(range(50, 100)),
@@ -372,8 +373,8 @@ class TestScopeDisplay(unittest.TestCase):
         #data should have been plotted
         self.assertFalse(self.pw.trigger.is_triggered())
         self.assertEqual(len(self.pw.data), 2)
-        self.assertEqual(len(self.pw.data['x']), self.pw.max_length)
-        self.assertEqual(self.pw.trigger.display_trigger_index(), 50)
+        self.assertEqual(len(self.pw.data['x']), 75)
+        self.assertEqual(self.pw.trigger.display_trigger_index(), 25)
 
         #
         # Test trigger without datatime field

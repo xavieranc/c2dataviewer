@@ -51,15 +51,30 @@ class PlotChannel:
     Channel data to plot
     """
     
-    def __init__(self, pvname, color):
+    def __init__(self, pvname, color, dc_offset = 0, axis_location = 'left', started = True, array_id = None):
         """
         pvname: (str) PV data name.  Either is the PV name or PV.field1.field2 format.  
         """
         self.color = color
         self.pvname = pvname
-        self.dc_offset = 0
-        self.axis_location = 'left'
+        self.dc_offset = dc_offset
+        self.axis_location = axis_location
+        self.started = started
+        self.test_array_id = array_id
+        self.last_test_array = None
+
+    def should_be_drawn(self, xaxes : str, trigger_data_time_field : str) -> bool :
+        '''
+        Tells if PlotChannel should be drawn on screen.
+        It should not if PV name is None, empty or if PV is used as x-axis, trigger data time field or not started.
         
+        :param xaxes: The name of the PV used as x-axis.
+        :param trigger_data_time_field: The name of the PV used as trigger data time field.
+        '''
+        return self.pvname not in ['None', '', xaxes, trigger_data_time_field] and self.started
+
+    def __str__(self):
+        return self.pvname
 
 class TriggerType(enum.Enum):
     ON_CHANGE = 'onchange'
@@ -77,7 +92,7 @@ class Trigger:
         # Is trigger mode enabled
         self.trigger_mode = False
 
-        # True if in trigger mode and trigger was received (trigger PV monitor fired).
+        # True if (in trigger mode and) trigger was received (trigger PV monitor fired).
         self.is_triggered_ = False
 
         # Counts trigger PV monitor fired callback (count monitor updates)
@@ -89,6 +104,9 @@ class Trigger:
         self.display_start_index = 0
 
         self.trigger_data_done = True
+
+        # True if data is behind trigger time (index -2 of self.__is_trigger_in_array). Won't trigger until it turns False by self.add_to_trig_data.
+        self.data_behind = False
         
         # double sec past epoch timestamp from the trig pv
         self.trigger_timestamp = None
@@ -114,6 +132,17 @@ class Trigger:
         self.missed_triggers = 0
         self.missed_adjust_buffer_size = 0
         self.enable_trigger_marker = True
+
+        self.data_time_field_on_error = False # Did an error occur when trying to use data time field. 
+
+        class WarningSignal(QtCore.QObject):
+            ''' Signal aiming to trigger parent error callback (which should be ScopeController.notify_warning). '''
+            signal = QtCore.pyqtSignal(str)
+            def emit(self, message : str) -> None : self.signal.emit(message)
+            def __init__(self): super().__init__()
+
+        self.warning = WarningSignal()
+        self.warning.signal.connect(self.parent.error_callback)
         
     def __trigger_on_change(self, val):
         return True
@@ -150,6 +179,9 @@ class Trigger:
 
         if not self.trigger_data_done:
             return
+        
+        if self.data_behind:
+            return
 
         if not self.is_triggered_func(data['value']):
             return
@@ -162,6 +194,7 @@ class Trigger:
             self.trigger_timestamp = ts['secondsPastEpoch'] + 1e-9*ts['nanoseconds']
         else:
             self.trigger_timestamp = None
+        self.draw_data() # Draw data also when trigger PV is processed. It ensures that if plotted PV is not, display is updated.
 
     def __is_trigger_in_array(self, time_array):
         """
@@ -189,7 +222,8 @@ class Trigger:
     def status(self):
         if not self.trigger_mode:
             return 'Off'
-        
+        if self.data_behind:
+            return 'Waiting for new data'
         if self.missed_triggers > 0:
             return 'Trig off by %.1f s (Set buf=%.1e)' % (self.missed_time, self.missed_adjust_buffer_size)
         elif self.is_triggered_:
@@ -198,13 +232,21 @@ class Trigger:
             return 'Waiting for trigger'
 
     def __trig_max_length(self):
-        return int(1.5 * self.parent.max_length)
+        return self.parent.max_length
     
     def add_to_trig_data(self, k, v):
         # In trigger mode the minimum we must save is the whole last array (+ part of the old ones if max_length > vector_len)
         # We must store all the arrayes as the "Time" field determinate how much data do we really need, and the "Time" field can arrive last.
         required_data = self.__trig_max_length()
         self.trig_data[k] = np.append(self.trig_data.get(k, []), v)[-required_data:]
+        self.data_behind = False # Allow to launch trigger mechanism again and see if data is no more behind rtigger time.
+
+    def transfer(self) -> None :
+        ''' Copy data from parent's cache and empty parent's cache. '''
+        for k, v in self.parent.data.items():
+            self.add_to_trig_data(k, v)
+        self.parent.data = {}
+
 
     def draw_data(self):
         """
@@ -216,6 +258,9 @@ class Trigger:
             return
         
         if self.data_time_field not in self.trig_data.keys():
+            if self.data_time_field is not None and not self.data_time_field_on_error: # If an error occurs for the first time...
+                self.warning.emit('Data time field is absent in data. Ignoring it.') # ... warn the user ...
+                self.data_time_field_on_error = True # ... and write down it had been down.
             for k, v in self.trig_data.items():
                 if type(v) != np.ndarray:
                      continue
@@ -225,6 +270,7 @@ class Trigger:
             self.plot_trigger_signal_emitter.emit()
             self.enable_trigger_marker = False
         else:
+            self.data_time_field_on_error = False # Situation was fixed. Watch out for new errors.
             samples_after_trig = int(max_length / 2)
 
             # Check if we have trigger timestamp in buffer
@@ -266,15 +312,28 @@ class Trigger:
                     self.is_triggered_ = False
                     self.trigger_data_done = True
                 else:
+                    self.is_triggered_ = False
+                    self.trigger_data_done = True
                     self.missed_triggers = 0
             else:
-                logging.getLogger().debug("Data is %f seconds behind trigger time" % (self.trigger_timestamp - time_data[-1]))
+                self.warning.emit('Data is %f seconds behind trigger time. Waiting for new data before starting triggering again.' % (self.trigger_timestamp - time_data[-1]))
+                self.data_behind = True
 
     def display_trigger_index(self):
         """
         Returns the position of the trigger in the display buffer (i.e self.parent.data)
         """
         return self.trigger_index - self.display_start_index
+    
+    def set_data_time_field(self, data_time_field : str) -> None :
+        '''
+        Set trigger data time field and reset error flag.
+
+        :param data_time_field: The new trigger data time field.
+        '''
+        self.data_time_field = data_time_field if data_time_field != 'None' else None
+        self.data_time_field_on_error = False
+        self.parent.setup_plot()
     
     def finish_drawing(self):
         # Trigger curves were drawn - Freeze the scope
@@ -286,6 +345,7 @@ class Trigger:
         self.trigger_count = 0
         self.is_triggered_ = False
         self.trigger_data_done = True
+        self.data_behind = False
         self.trigger_value = None
         self.missed_triggers = 0
         
@@ -298,6 +358,16 @@ class Trigger:
             self.plot_trigger_signal_emitter.my_signal.disconnect()
         except Exception:
             pass
+
+    def clear_waveform_data(self, pv_name : str) -> None :
+        '''
+        Removes all a specific PV related data.
+
+        :param pv_name: The name of the PV of which the data should be removed.
+        '''
+        to_delete = [key for key in self.trig_data.keys() if pv_name in key]
+        for key in to_delete:
+            del self.trig_data[key]
 
 class MouseOver:
 
@@ -510,8 +580,6 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         pyqtgraph.GraphicsLayoutWidget.__init__(self, parent=parent)
         self.setParent(parent)
 
-        self.param_changed = False
-        self.model = None
         self.channels = []
         self.auto_scale = False
         self.first_data = True
@@ -526,7 +594,6 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         self.data_size = 0
         self.new_buffer = True
         self.data = {}
-        self.first_run = True
         self.new_plot = True
         
         # last id number of array received
@@ -565,6 +632,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         self.views = []
         self.curves = []
 
+        self.error_callback = lambda x: None # Fonction to be called when an error occur to display information. Sould be set to ScopeControllerBase.notify_warning when Controller is instanciated.
         
         self.trigger = Trigger(self)
         self.mouse_over = MouseOver(self)
@@ -584,15 +652,6 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
     def set_trigger_mode(self, flag):
         self.trigger.set_trigger_mode(flag)
-            
-    def set_model(self, model):
-        """
-
-        :param model:
-        :return:
-        """
-        self.model = model
-
 
     def enable_sampling_mode(self, val):
         """
@@ -629,6 +688,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         else:
             # Capitalize the label for display purposes
             self.plot.setLabel('bottom', self.current_xaxes.capitalize())
+        self.setup_plot()
 
     def set_enable_mouseover(self, value):
         self.mouse_over.enable(value)
@@ -691,6 +751,8 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         # Delete existing plots
         self.delete_plots()
 
+        self.xaxis_on_error = False
+
         # Set new list of signals
         if channels:
             self.channels = channels
@@ -716,7 +778,6 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         #apply settings to new plot
         self.set_autoscale(self.auto_scale)
-        self.set_xaxes(self.current_xaxes)
         
         self.new_plot = True
         self.data_size = 0
@@ -732,7 +793,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         if self.channels:
             self.plot.addLegend()
         for ch in self.channels:
-            if ch.pvname == "None":
+            if not ch.should_be_drawn(self.current_xaxes, self.trigger.data_time_field):
                 continue
             curve = self.plot.plot(pen=ch.color, name=ch.pvname)
             curve.plotdata_ave = None
@@ -759,7 +820,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         left_axis = []
         right_axis = []
         for i, ch in enumerate(self.channels):
-            if ch.pvname == "None":
+            if not ch.should_be_drawn(self.current_xaxes, self.trigger.data_time_field):
                 continue
 
             axis = pyqtgraph.AxisItem(ch.axis_location)
@@ -800,7 +861,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         count = 0
 
         for i, ch in enumerate(self.channels):
-            if ch.pvname == 'None':
+            if not ch.should_be_drawn(self.current_xaxes, self.trigger.data_time_field):
                 continue
             
             curve = pyqtgraph.PlotCurveItem(pen=ch.color)
@@ -899,7 +960,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         #
         # Cases where x-values are not buffer samples
         #
-        if self.current_xaxes != None or self.display_mode.is_fft() or self.histogram:
+        if self.current_xaxes != 'None' or self.display_mode.is_fft() or self.histogram:
             return
         
         xmin = 0;
@@ -1034,6 +1095,24 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         if pvname in self.sample_data:
             self.sample_data[pvname] = 0
 
+    def clear_waveform_data(self, pv_name : str) -> None :
+        '''
+        Empty cache and trigger cache of one specific PV's data.
+
+        :param pv_name: The name of the PV. 
+        '''
+        to_delete = [key for key in self.data.keys() if pv_name in key]
+        for key in to_delete:
+            del self.data[key]
+        self.trigger.clear_waveform_data(pv_name)
+
+    def clear_all(self) -> None :
+        ''' Reset plot with empty channel and empty channels, cache and trigger cache. '''
+        self.setup_plot([])
+        self.data = {}
+        self.channels = []
+        self.trigger.trig_data = {}
+
     def data_process(self, data_generator):
         """
         Process raw data off the wire
@@ -1062,6 +1141,15 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
                 self.lastArrayId = v
                 if self.data_size == 0:
                     new_size += 4
+            else:
+                # Do the same job for all waveforms.
+                for waveform in self.channels:
+                    array_id = waveform.test_array_id
+                    last_test_array = waveform.last_test_array
+                    if (k == array_id):
+                        if (last_test_array is not None) and (v - last_test_array > 1):
+                            self.lostArrays += 1
+                        waveform.last_test_array = v
 
             # If pvaccess modules was build without numpy, normal Python list is returned. Make conversion here.
             if type(v) is list:
@@ -1211,13 +1299,16 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         # time array
         time_array = None
 
-        if self.current_xaxes != "None" and len(self.data.get(self.current_xaxes,[])) == data_len:
+        if self.current_xaxes != "None":
+            if len(self.data.get(self.current_xaxes,[])) == data_len:
             # TODO later to support: frequency field & sample period as time reference
             # TODO need to handle multiple waveform plotting with different data length
             # Currently, support time only
-            sample_period = np.diff(self.data[self.current_xaxes]).mean()
-            time_array = self.data[self.current_xaxes]
-
+                sample_period = np.diff(self.data[self.current_xaxes]).mean()
+                time_array = self.data[self.current_xaxes]
+            elif not self.xaxis_on_error:
+                self.error_callback('Time axis does not fit data length, perhaps it is missing in data or not started. Ignoring it.') # error_callback should be set to ScopeControllerBase.notify_warning
+                self.xaxis_on_error = True
 
         xf = yf = None
         if self.display_mode == DisplayMode.DIFF:
@@ -1287,13 +1378,13 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         """
         if self.trigger.is_triggered() and self.trigger.enable_trigger_marker:
             if draw_trig_mark:
-                if time_array:
+                if time_array is not None:
                     marktime = self.trigger.trigger_timestamp - time_array[0]
                 else:
                     marktime = self.trigger.display_trigger_index()
                     
                 # Add trigger marker on plotting
-                pvnames = [ c.pvname for c in self.channels ]
+                pvnames = [c.pvname for c in self.channels if c.should_be_drawn(self.current_xaxes, self.trigger.data_time_field)] # Uses only effectively displayed channels to calculate the minimum and maximum.
                 min_value = max_value = None
                 if self.single_axis:
                     for field, value in self.data.items():
@@ -1350,7 +1441,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
         count = 0
         draw_trig_mark = True
         for idx, ch in enumerate(self.channels):
-            if ch.pvname != "None":
+            if ch.should_be_drawn(self.current_xaxes, self.trigger.data_time_field):
                 data = self.data.get(ch.pvname)
                 if data is not None:
                     self.draw_curve(count, data, ch, draw_trig_mark)
@@ -1358,7 +1449,7 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
                 count = count + 1
 
         # Axis scaling
-        if self.first_run or self.new_plot:
+        if self.new_plot:
             self.do_autoscale()
             self.reset_xrange()
         elif self.new_buffer:
@@ -1366,7 +1457,6 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
         self._setup_ticks()
             
-        self.first_run = False
         self.new_plot = False
         self.new_buffer = False        
 
@@ -1396,9 +1486,11 @@ class PlotWidget(pyqtgraph.GraphicsLayoutWidget):
 
     def notify_plotting_started(self, val):
         self.plotting_started = val
-        if self.trigger.trigger_mode:
-            if val:
-                self.trigger.reset()
-                self.trigger.connect_to_callback()
-            else:
-                self.trigger.disconnect_to_callback()
+
+    def start_trigger(self):
+        self.trigger.connect_to_callback()
+        self.trigger.transfer()
+
+    def stop_trigger(self):
+        self.trigger.reset()
+        self.trigger.disconnect_to_callback()

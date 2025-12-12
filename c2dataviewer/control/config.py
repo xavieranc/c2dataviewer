@@ -3,6 +3,7 @@ from enum import Enum, auto
 from configparser import ConfigParser
 import re
 import logging
+from typing import Any
 
 
 class AppType(Enum):
@@ -31,8 +32,10 @@ class Scope(Enum):
     TRIGGER_TIME_FIELD = auto()
     TRIGGER_DATA_TIME_FIELD = auto()
     CHANNEL_COUNT = auto()
+    WAVEFORM_COUNT = auto()
     MOUSE_OVER = auto()
     CONNECT_ON_START = auto()
+    CA_MODE = auto()
     PV = auto()
     ARRAYID = auto()
     XAXES = auto()
@@ -67,8 +70,10 @@ _schema = {
     Scope.TRIGGER_TIME_FIELD: Field(loc=('TRIGGER', 'TIME_FIELD'), type=str),
     Scope.TRIGGER_DATA_TIME_FIELD: Field(loc=('TRIGGER', 'DATA_TIME_FIELD'), type=str),
     Scope.CHANNEL_COUNT: Field(loc=('CHANNELS', 'COUNT'), type=int),
+    Scope.WAVEFORM_COUNT: Field(loc=('WAVEFORMS', 'COUNT'), type=int),
     Scope.MOUSE_OVER: Field(loc=('DISPLAY', 'MOUSEOVER'), type=bool),
     Scope.CONNECT_ON_START: Field(loc=('ACQUISITION', 'CONNECTONSTART'), type=bool),
+    Scope.CA_MODE: Field(loc=('ACQUISITION', 'CAMode'), type=bool),
     Scope.PV: Field(loc=('ACQUISITION', 'PV'), type=str),
     Scope.ARRAYID: Field(loc=('CONFIG', 'ARRAYID'), type=str),
     Scope.XAXES: Field(loc=('CONFIG', 'XAXES'), type=str),
@@ -116,6 +121,29 @@ class Parser:
 
         chan_cfgs = list(chan_cfg_lookup.values())
         return chan_cfgs
+
+    def get_waveform_config(self) -> list[dict[str, str]] :
+        '''
+        Reads configuration file and returns a list of dictionnaries. Each dictionnary corresponds to a waveform, keys are parameters and values values.
+
+        :return: The list of dictionnaries.
+        '''
+        section = None
+        try:
+            section = self.cfg['WAVEFORMS']               
+        except:
+            section = None
+            
+        waveforms_configure_lookup = {}
+        
+        if section:
+            for k, v in section.items():
+                if re.match('waveform', k, re.I):
+                    waveform, parameter = k.lower().split('.')
+                    waveforms_configure_lookup.setdefault(waveform, {})
+                    waveforms_configure_lookup[waveform][parameter] = v
+    
+        return list(waveforms_configure_lookup.values())
     
     def get_appname(self):
         return self.cfg.get('DEFAULT', 'APP')        
@@ -217,6 +245,24 @@ class Serializer:
             for k, v in cfg.items():
                 key = f'{prefix}{k.lower()}'
                 self.cfg.set(section, key, str(v))
+            i += 1
+
+    def write_waveforms(self, waveforms_configurations : list[dict[str, Any]]) -> None :
+        '''
+        Write waveforms configurations to a specific section.
+        
+        :param waveforms_configurations: The list of dictionnaries. Keys of each dictionnary are parameters (PV, DC offset, ...) as string and values, their corresponding value ('MY:PV', 5, ...).
+        '''
+        section = 'WAVEFORMS'
+        if not self.cfg.has_section(section):
+            self.cfg.add_section(section)
+
+        i = 1
+        for configuration in waveforms_configurations:
+            prefix = f'Waveform{i}.'
+            for parameter, value in configuration.items():
+                key = f'{prefix}{parameter.lower()}'
+                self.cfg.set(section, key, str(value))
             i += 1
 
     def write(self, cfile):

@@ -67,14 +67,11 @@ def scope(cfg, **kwargs):
     parameters = Parameter.create(
         name="params", type="group", children=configure.parse())
     w.parameterPane.setParameters(parameters, showTop=False)
-    pvmap = configure.pvs
 
     warning = WarningDialog(None)
 
-    default_pv = list(pvmap.values())[0] if pvmap else None    
-    model = DataReceiver(default=default_pv)
-    controller = ScopeController(w, model, parameters, WARNING=warning)
-    controller.default_config(**kwargs)
+    model = DataReceiver()
+    controller = ScopeController(w, model, parameters, warning = warning, default_configuration = True, **kwargs)
 
     parameters.sigTreeStateChanged.connect(controller.parameter_change)
 

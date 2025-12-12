@@ -11,9 +11,10 @@ from ..model import ConnectionState
 import math
 from .config import Scope
 from PyQt5 import QtWidgets
+import logging
 
 class ScopeControllerBase:
-    def __init__(self, widget, model, parameters, warning, channels=[], **kwargs):
+    def __init__(self, widget, model, parameters, warning, **kwargs):
         self._win = widget
         self.model = model
         self.parameters = parameters
@@ -26,7 +27,6 @@ class ScopeControllerBase:
         self.timer = pyqtgraph.QtCore.QTimer()
         self.timer.timeout.connect(self._win.graphicsWidget.update_drawing)
         self._win.graphicsWidget.set_autoscale(parameters.child('Display', 'Autoscale').value())
-        self._win.graphicsWidget.set_model(self.model)
 
         self._warning = warning
         self._warning.warningConfirmButton.clicked.connect(lambda: self.accept_warning())
@@ -39,8 +39,6 @@ class ScopeControllerBase:
         self.trigger_auto_scale = False
 
         self._win.graphicsWidget.set_histogram(parameters.child('Display', 'Histogram').value())
-        single_axis = parameters.child('Display', 'Single axis').value()
-        self._win.graphicsWidget.setup_plot(channels=channels, single_axis=single_axis)
 
         display_mode = parameters.child('Display', 'Mode').value()
         if(display_mode != "normal"):
@@ -161,7 +159,7 @@ class ScopeControllerBase:
                 elif childName == "Trigger.Threshold":
                     self._win.graphicsWidget.trigger.trigger_level = data
                 elif childName == "Trigger.Data Time Field":
-                    self._win.graphicsWidget.trigger.data_time_field = data
+                    self._win.graphicsWidget.trigger.set_data_time_field(data_time_field = data)
                 elif childName == "Trigger.Time Field":
                     self._win.graphicsWidget.trigger.trigger_time_field = data
                 elif childName == "Trigger.Autoscale Buffer":
@@ -233,6 +231,7 @@ class ScopeControllerBase:
 
         self.timer.stop()
         self.stop_trigger()
+        self._win.graphicsWidget.clear_all()
                     
     def set_trigger_mode(self, value):
         """
@@ -264,8 +263,7 @@ class ScopeControllerBase:
             if self.model.trigger is None:
                 raise Exception('Trigger PV is not set or is invalid')
             
-
-            
+            self._win.graphicsWidget.start_trigger()
             self.model.start_trigger(self._win.graphicsWidget.trigger.data_callback)
             self.trigger_is_monitor = True
 
@@ -276,6 +274,7 @@ class ScopeControllerBase:
         """
         self.trigger_is_monitor = False
         self.model.stop_trigger()
+        self._win.graphicsWidget.stop_trigger()
         
     def accept_warning(self):
         """
@@ -313,6 +312,13 @@ class ScopeControllerBase:
         self.lastArrays = arraysReceived
         self.arrays = np.append(self.arrays, n)[-10:]
 
+        # Try to disconnect signal to prevent recursive calls of callback and then SegFaults.
+        try:
+            self.parameters.sigTreeStateChanged.disconnect(self.parameter_change)
+            reconnect = True
+        except TypeError:
+            logging.getLogger().error('Impossible to disconnect parameter signal.')
+            reconnect = False
         for q in self.parameters.child("Statistics").children():
             if q.name() == 'CPU':
                 q.setValue(cpu)
@@ -338,6 +344,8 @@ class ScopeControllerBase:
                     q.setValue(str(self._win.graphicsWidget.trigger.trigger_value))
         except:
             pass
+        if reconnect:
+            self.parameters.sigTreeStateChanged.connect(self.parameter_change)
 
         #handle any auto-adjustments
         if self.trigger_auto_scale and self._win.graphicsWidget.trigger_mode():

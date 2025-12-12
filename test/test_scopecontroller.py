@@ -68,7 +68,7 @@ class TestImageDisplay(unittest.TestCase):
         self.warning = WarningDialog(None)
 
         self.scope_controller = ScopeController(
-            widget=self.window, model=self.model, parameters=self.parameters, WARNING=self.warning)
+            widget=self.window, model=self.model, parameters=self.parameters, warning=self.warning)
 
     def tearDown(self):
         """
@@ -98,7 +98,7 @@ class TestImageDisplay(unittest.TestCase):
         self.window.parameterPane.setParameters(parameters, showTop=False)
 
         controller = ScopeController(
-            widget=self.window, model=self.model, parameters=parameters, WARNING=self.warning)
+            widget=self.window, model=self.model, parameters=parameters, warning=self.warning)
 
         return controller
 
@@ -202,7 +202,7 @@ class TestImageDisplay(unittest.TestCase):
         controller = self.create_controller(configure)
 
         # Verify kwarg settings are used
-        self.assertEqual(controller.parameters.child("Config").child("ArrayId").value(), 'TestArray')
+        self.assertEqual(controller.parameters.child("Acquisition").child("ArrayId").value(), 'TestArray')
         self.assertEqual(controller.parameters.child("Config").child("X Axes").value(), 'TestXAxis')
 
     def test_kwarg_overrides_config(self):
@@ -224,7 +224,7 @@ class TestImageDisplay(unittest.TestCase):
         controller = self.create_controller(configure)
 
         # Verify kwargs override config file values
-        self.assertEqual(controller.parameters.child("Config").child("ArrayId").value(), 'KwargArrayId')
+        self.assertEqual(controller.parameters.child("Acquisition").child("ArrayId").value(), 'KwargArrayId')
         self.assertEqual(controller.parameters.child("Config").child("X Axes").value(), 'KwargXAxis')
 
     def test_pv_kwarg(self):

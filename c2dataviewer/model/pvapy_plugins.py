@@ -17,6 +17,8 @@ from threading import Lock
 from collections import deque
 from statistics import mean
 import enum
+import logging
+from typing import Callable
 
 import pvaccess as pva
 from pvaccess import PvaException
@@ -99,7 +101,7 @@ class PollStrategy:
             self.ctx.channel.asyncGet(self._data_callback, self._err_callback, '')
         except pva.PvaException:
             #error because too many asyncGet calls at once.  Ignore
-            pass
+            logging.getLogger().exception('Failed to poll with PollStrategy.')
         
     def start(self):
         """
@@ -166,11 +168,11 @@ class MonitorStrategy:
         Stops the PV monitor
         """
         try:
-            self.ctx.channel.setConnectionCallback(None)
             self.ctx.channel.stopMonitor()
-            self.ctx.channel.unsubscribe('monitorCallback')
+            self.ctx.channel.setConnectionCallback(None)
         except PvaException:
-            pass
+            logging.getLogger().exception('Failed to stop Monitor.')
+            raise
 
 
 class ConnectionState(enum.Enum):
@@ -182,6 +184,7 @@ class ConnectionState(enum.Enum):
     DISCONNECTING = 3
     DISCONNECTED = 4
     FAILED_TO_CONNECT = 5
+    EMPTY = 6
 
     def __str__(self):
         string_lookup = {
@@ -189,7 +192,8 @@ class ConnectionState(enum.Enum):
             2 : 'Connecting',
             3 : 'Disconnecting',
             4 : 'Disconnected',
-            5 : 'Failed to connect'
+            5 : 'Failed to connect',
+            6 : ''
         }
 
         return string_lookup[int(self.value)]
@@ -199,7 +203,7 @@ class Channel:
     PV Channel object.  Manages getting the PV data and monitoring channel connection
     status
     """
-    def __init__(self, name, data_source, timer=None, provider=pva.PVA, status_callback=None):
+    def __init__(self, name, data_source, timer = None, provider = pva.PVA, status_callback = None, deletion_callback = None):
         """
         name : PV name
         data_source: data source class that owns this object
@@ -217,9 +221,10 @@ class Channel:
         self.monitor_strategy = MonitorStrategy(self)
         self.poll_strategy = PollStrategy(self, timer) if timer else None
         self.strategy = None
-        self.rate = None
+        self.state = None
         self.status_callback = status_callback
-        self.state = ConnectionState.DISCONNECTED
+        self.deletion_callback = deletion_callback
+        self.set_state(ConnectionState.DISCONNECTED)
 
     def data_callback_wrapper(self, data):
         """
@@ -284,6 +289,33 @@ class Channel:
             self.strategy.stop()
         self.set_state(ConnectionState.DISCONNECTED)
 
+    def deactivate(self) -> None :
+        '''
+        Sets self's state to EMPTY and remove self.status_callback.
+        '''
+        self.status_callback = None
+        self.set_state(ConnectionState.EMPTY)
+    
+    def reactivate(self, new_status_callback : Callable[[str, str], None]) -> None :
+        '''
+        Sets new status callback and change state to 'DISCONNECTED'.
+
+        Should be called when self is restored from cache. It replaces __init__ when self is already instanciated.
+
+        :param new_status_callback: The status callback from the new object that handle the Channel.
+        '''
+        self.status_callback = new_status_callback
+        self.set_state(ConnectionState.DISCONNECTED)
+    
+    def delete(self) -> None :
+        ''' Stops pvaccess.pvaccess.Channel object and delete MonitorStrategy and PollStrategy. '''
+        self.stop()
+        self.deactivate()
+        del self.channel
+        del self.monitor_strategy
+        del self.poll_strategy
+        self.deletion_callback(channel = self)
+
     def is_running(self):
         """
         Returns True if Channel is running
@@ -311,10 +343,10 @@ class Channel:
             self.channel.asyncGet(data_callback, error_callback, '')
         except pva.PvaException:
             #error because too many asyncGet calls at once.  Ignore
-            pass
+            logging.getLogger().exception('Failed to get async with Channel.')
         
 class DataSource:
-    def __init__(self, timer_factory=None, default=None):
+    def __init__(self, timer_factory = None):
         """
 
         :param default:
@@ -331,43 +363,44 @@ class DataSource:
         self.data_callback = None
         self.status_callback = None
         
-        # Default PV name
-        self.device = None
-        if default is not None:
-            if type(default) in [list, tuple]:
-                self.__init_connection(default[0])
-            elif type(default) == dict:
-                self.__init_connection(list(default.values())[0])
-            elif type(default) == str:
-                self.__init_connection(default)
-            else:
-                raise RuntimeError("Unknown data type of default parameter: ", default)
-
-        # trigger support from external EPICS3/7 channel
+        # Trigger support from external EPICS3/7 channel
         self.trigger = None
         self.trigger_chan = None
 
-    def create_connection(self, name, provider):
+    def create_connection(self, name : str, provider : pva.ProviderType, check_connection : bool = True, status_callback : Callable[[str, str], None] = lambda x, y: None, error_callback : Callable[[str], None] = lambda x: None) -> Channel :
+        '''
+        Create a new Channel object or restore it from cache.
+
+        :param name: PV Name.
+        :param provider: pvaccess.CA or pvaccess.PVA module.
+        :param status_callback: Method to be called at state changing. Must accept a ConnectionState (as string) as first argument and message (as string) as second argument.
+        :param check_connection: If True, test connection; call error_callback and return None if it fails.
+        :param error_callback: If check_connection and connection fails, call this. Must accept a message (as string) as arugment.
+        '''
         if name in self.channel_cache and self.channel_cache[name].provider == provider:
-            return self.channel_cache[name]
+            channel = self.channel_cache[name]
+            channel.reactivate(new_status_callback = status_callback)
+            return channel
         else:
-            chan = Channel(name, self, self.timer_factory(), provider=provider)
+            chan = Channel(name, self, self.timer_factory(), provider = provider, status_callback = status_callback, deletion_callback = self.delete_channel)
+            if check_connection:
+                try:
+                    chan.get()
+                except:
+                    error_callback(f'Could not get connection to {name}.')
+                    return None
             self.channel_cache[name] = chan
             return chan
-    
-    def __init_connection(self, name):
-        """
-        Create initial channel connection with given PV name
-
-        :param name: EPICS7 PV name
-        :return:
-        """
-
-        name, proto = parse_pvname(name, pva.ProviderType.PVA)
-        self.device = name
         
-        self.channel = Channel(self.device, self, self.timer_factory(), proto)
-        self.channel_cache[name] = self.channel
+    def delete_channel(self, channel : Channel) -> None :
+        '''
+        Eventually reset self's channel then delete channel from cache.
+
+        :param channel: The channel to be deleted.
+        '''
+        if self.channel == channel:
+            self.channel == None
+        del self.channel_cache[channel.name]
             
     def get(self):
         """
@@ -407,35 +440,26 @@ class DataSource:
     def update_server_queue_size(self, sqs):
         self.server_queue_size = sqs
 
-    def update_device(self, name, restart=False, test_connection=True):
+    def update_device(self, name : str, restart : bool = False, check_connection : bool = True, error_callback : Callable[[str], None] = lambda x: None, delete : bool = False) -> None :
         """
-        Update device, EPICS PV name, and test its connectivity
+        Stop previous channel and change self's Channel.
 
-        :param name: device name
-        :param restart: flag to restart or not
-        :param test_connection: flag to test channel connectivity or not
+        :param name: PV name.
+        :param restart: Flag to restart or not.
+        :param check_connection: Flag to test channel connectivity or not.
+        :param error_callback: If check_connection and connection fails, call this.
+        :param delete: Set True to delete previous channel.
         :return:
-        :raise PvaException: raise pvaccess exception when channel cannot be connected.
         """
         if self.channel is not None:
             self.stop()
+        if delete:
+            self.channel.delete()
 
         if name != "":
-            chan = None
-            if name in self.channel_cache:
-                chan = self.channel_cache[name]
-            else:
-                name, proto = parse_pvname(name, pva.ProviderType.PVA)
-                chan = Channel(name, self, self.timer_factory(), provider=proto, status_callback=self.status_callback)
-                self.channel_cache[name] = chan
-                
-            self.channel = chan
-            self.device = name
-
-            # test channel connectivity
-            if test_connection:
-                chan.get()
-
+            name, proto = parse_pvname(name, pva.ProviderType.PVA)
+            self.channel = self.create_connection(name = name, provider = proto, check_connection = check_connection, error_callback = error_callback)
+        
             if restart:
                 self.start()
         else:
