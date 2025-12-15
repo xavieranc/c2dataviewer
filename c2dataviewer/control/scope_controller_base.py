@@ -11,9 +11,10 @@ from ..model import ConnectionState
 import math
 from .config import Scope
 from PyQt5 import QtWidgets
+import logging
 
 class ScopeControllerBase:
-    def __init__(self, widget, model, parameters, warning, channels=[], **kwargs):
+    def __init__(self, widget, model, parameters, warning, channels=[]):
         self._win = widget
         self.model = model
         self.parameters = parameters
@@ -313,6 +314,13 @@ class ScopeControllerBase:
         self.lastArrays = arraysReceived
         self.arrays = np.append(self.arrays, n)[-10:]
 
+        # Try to disconnect signal to prevent recursive calls of callback and then SegFaults.
+        try:
+            self.parameters.sigTreeStateChanged.disconnect(self.parameter_change)
+            reconnect = True
+        except TypeError:
+            logging.getLogger().error('Impossible to disconnect parameter signal.')
+            reconnect = False
         for q in self.parameters.child("Statistics").children():
             if q.name() == 'CPU':
                 q.setValue(cpu)
@@ -338,6 +346,8 @@ class ScopeControllerBase:
                     q.setValue(str(self._win.graphicsWidget.trigger.trigger_value))
         except:
             pass
+        if reconnect:
+            self.parameters.sigTreeStateChanged.connect(self.parameter_change)
 
         #handle any auto-adjustments
         if self.trigger_auto_scale and self._win.graphicsWidget.trigger_mode():

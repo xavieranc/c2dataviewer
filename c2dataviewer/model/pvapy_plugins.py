@@ -17,6 +17,8 @@ from threading import Lock
 from collections import deque
 from statistics import mean
 import enum
+import logging
+from typing import Callable
 
 import pvaccess as pva
 from pvaccess import PvaException
@@ -99,7 +101,7 @@ class PollStrategy:
             self.ctx.channel.asyncGet(self._data_callback, self._err_callback, '')
         except pva.PvaException:
             #error because too many asyncGet calls at once.  Ignore
-            pass
+            logging.getLogger().exception('Failed to poll with PollStrategy.')
         
     def start(self):
         """
@@ -166,11 +168,10 @@ class MonitorStrategy:
         Stops the PV monitor
         """
         try:
-            self.ctx.channel.setConnectionCallback(None)
             self.ctx.channel.stopMonitor()
-            self.ctx.channel.unsubscribe('monitorCallback')
+            self.ctx.channel.setConnectionCallback(None)
         except PvaException:
-            pass
+            logging.getLogger().exception('Failed to stop Monitor.')
 
 
 class ConnectionState(enum.Enum):
@@ -311,7 +312,7 @@ class Channel:
             self.channel.asyncGet(data_callback, error_callback, '')
         except pva.PvaException:
             #error because too many asyncGet calls at once.  Ignore
-            pass
+            logging.getLogger().exception('Failed to get async with Channel.')
         
 class DataSource:
     def __init__(self, timer_factory=None, default=None):
