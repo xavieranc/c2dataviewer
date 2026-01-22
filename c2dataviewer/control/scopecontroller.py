@@ -26,6 +26,11 @@ import math
 import statistics
 from typing import Callable
 
+MINIMUM_CHANNEL_NUMBER : int = 1
+MINIMUM_WAVEFORM_NUMBER : int = 1
+MAXIMUM_CHANNEL_NUMBER : int = 10
+MAXIMUM_WAVEFORM_NUMBER : int = 10
+
 class Waveform:
     '''
     Sub-controller for waveform channel.
@@ -63,14 +68,16 @@ class Waveform:
         :param channel: The new Channel object.
         :param delete_previous: If so, deletes previous associated Channel. Else deactivates it.
         '''
-        if self.channel :
+        if self.channel:
             self.channel.delete() if delete_previous else self.channel.deactivate()
         self.channel = channel
 
     def reset(self) -> None :
         self.stop()
         self.set_channel(channel = None, delete_previous = False)
-        self.parent_controller.muted(lambda : self.get_parameters().child('PV').setValue(''))
+        parameters = self.get_parameters()
+        self.parent_controller.muted(lambda : parameters.child('PV').setValue(''))
+        self.parent_controller.muted(lambda : parameters.child('PV').setReadonly(False))
         self.connection_changed_callback(ConnectionState.EMPTY, '')
 
     def start(self) -> None :
@@ -111,7 +118,7 @@ class Waveform:
         '''
         self.start() if self.get_parameters().child('Start').value() else self.stop()
             
-    def connection_changed_callback(self, state : ConnectionState, msg) -> None :
+    def connection_changed_callback(self, state : ConnectionState, msg = '') -> None :
         '''
         Change Parameter based on waveform's new state.
         '''
@@ -177,13 +184,13 @@ class ScopeController(ScopeControllerBase):
         
         self.color_pattern = ['#FFFF00', '#FF00FF', '#55FF55', '#00FFFF', '#5555FF', '#5500FF', '#FF5555', '#0000FF', '#FFAA00', '#000000']
 
-        nchannels = parameters.child('Acquisition', 'Channels').value()
+        nchannels = parameters.child('Config', 'Channel count').value()
         self.channels = []
         for i in range(nchannels):
             self.channels.append(ScopePlotChannel('None', self.color_pattern[i]))
         super().__init__(widget, model, parameters, warning, channels = self.channels)
 
-        number_waveforms = parameters.child('Acquisition', 'Waveforms').value()
+        number_waveforms = parameters.child('Config', 'Waveform count').value()
         self.waveforms = [Waveform(index = i + 1, controller = self) for i in range(number_waveforms)]
 
         self.default_arrayid = "None"
@@ -254,14 +261,12 @@ class ScopeController(ScopeControllerBase):
             fields = kwargs['fields'].split(',')
             total_fields = len(fields)
             if total_fields > len(self.channels) :
-                self.parameters.child('Acquisition', 'Channels').setValue(total_fields)
+                self.parameters.child('Config', 'Channel count').setValue(total_fields)
                 self.set_channels_number(number = total_fields)
             for i, f in enumerate(fields):
                 chan_name = "Channel %s" % (i + 1)
-                child = self.parameters.child(chan_name)
-                c = child.child("Field")
-                c.setValue(f)
-                self.set_channel_data(chan_name, 'Field', c.value())
+                self.parameters.child(chan_name, 'Field').setValue(f)
+                self.set_channel_data(chan_name, 'Field', f)
 
         #Update other channel information
         for idx in range(len(self.channels)):
@@ -341,7 +346,7 @@ class ScopeController(ScopeControllerBase):
         
         :param number: The new number of sections that should be displayed.
         '''
-        if number > 10 or number < 1 or type(number) is not int:
+        if number > MAXIMUM_CHANNEL_NUMBER or number < MINIMUM_CHANNEL_NUMBER or type(number) is not int:
             raise ValueError(f'Invalid channel number: {number}. Must be integer between 1 and 10.')
         previous_number = len(self.channels)
         if previous_number > number:
@@ -349,11 +354,11 @@ class ScopeController(ScopeControllerBase):
             while previous_number > number:
                 self.muted(lambda : self.parameters.child('Channel %s' % previous_number).remove())
                 previous_number -= 1
-        else:
-            while previous_number < number:
-                self.muted(lambda : self.parameters.insertChild(self.parameters.child('Statistics'), Configure.new_channel(previous_number + 1, self.color_pattern[previous_number], ['None'], 0)))
-                self.channels.append(ScopePlotChannel('None', self.color_pattern[previous_number]))
-                previous_number = len(self.channels)
+        else: # If user asked for increase channel count:
+            while previous_number < number: # While there are not enough:
+                self.muted(lambda : self.parameters.insertChild(self.parameters.child('Statistics'), Configure.new_channel(previous_number + 1, self.color_pattern[previous_number], ['None'], 0))) # Add one parameter corresponding to the new channel.
+                self.channels.append(ScopePlotChannel('None', self.color_pattern[previous_number])) # Add one new PlotChannel object to the list.
+                previous_number = len(self.channels) # Update the channel number for while loop.
         self._win.parameterPane.setParameters(self.parameters, showTop = False)
         self.update_fdr()
         self._win.graphicsWidget.setup_plot(channels = self.channels)
@@ -364,7 +369,7 @@ class ScopeController(ScopeControllerBase):
         
         :param number: The new number of sections that should be displayed.
         '''
-        if number > 10 or number < 1:
+        if number > MAXIMUM_CHANNEL_NUMBER or number < MINIMUM_CHANNEL_NUMBER or type(number) is not int:
             raise ValueError(f'Invalid waveform number: {number}.. Must be integer between 1 and 10.')
         previous_number = len(self.waveforms)
         if previous_number > number:
@@ -651,6 +656,11 @@ class ScopeController(ScopeControllerBase):
                         self.stop_plotting()
                 elif childName == 'Acquisition.Start CA':
                     self.start_stop_ca()
+                elif childName == 'Config.Channel count':
+                    print(data)
+                    self.set_channels_number(number = data)
+                elif childName == 'Config.Waveform count':
+                    self.set_waveforms_number(number = data)
                 elif 'Channel ' in childName:
                     chan, field = childName.split('.')
                     self.set_channel_data(chan, field, data)
@@ -658,10 +668,6 @@ class ScopeController(ScopeControllerBase):
                     self.set_waveform(*childName.split('.')) # First arugment : Waveform name; second : Waveform parameter.
                 elif childName == "Acquisition.ArrayId":
                     self.set_arrayid(data)
-                elif childName == 'Acquisition.Channels':
-                    self.set_channels_number(number = data)
-                elif childName == 'Acquisition.Waveforms':
-                    self.set_waveforms_number(number = data)
                 elif childName == "Config.X Axes":
                     self.set_xaxes(data)
                 elif childName == "Config.Major Ticks":
@@ -795,6 +801,8 @@ class ScopeController(ScopeControllerBase):
         # start a new monitor
         self.model.start(self.monitor_callback)
         
+        self._win.graphicsWidget.setup_plot(channels=self.channels)
+        
         try:                
             super().start_plotting()
             self.muted(lambda : self.parameters.child("Acquisition").child("Start").setValue(1))
@@ -813,12 +821,14 @@ class ScopeController(ScopeControllerBase):
         self.model.stop()
 
     def start_plotting_ca(self) -> None :
+        self.muted(lambda : self.parameters.child('Acquisition').child('Start CA').setValue(1))
         super().start_plotting()
     
     def stop_plotting_ca(self) -> None :
         for waveform in self.waveforms:
             waveform.stop()
         self.update_waveforms_plot()
+        self.muted(lambda : self.parameters.child('Acquisition').child('Start CA').setValue(0))
         super().stop_plotting()
 
     def start_stop_ca(self) -> None :
@@ -874,8 +884,8 @@ class ScopeController(ScopeControllerBase):
             (True, ('Acquisition', 'ArrayId')),
             (True, ('Acquisition', 'Start')),
             (False, ('Acquisition', 'Start CA')),
-            (True, ('Acquisition', 'Channels')),
-            (False, ('Acquisition', 'Waveforms')),
+            (True, ('Config', 'Channel count')),
+            (False, ('Config', 'Waveform count')),
         ]
         toggles.extend(
             (True, ('Channel %s' % (i + 1), )) for i in range(len(self.channels))
@@ -948,6 +958,9 @@ class ScopeController(ScopeControllerBase):
         mo_location = self.parameters.child("Config", "MO Disp Location").value()
         if mo_location:
             serializer.set(Scope.MOUSE_OVER_DISPLAY_LOCATION, mo_location)
+
+        serializer.set(Scope.CHANNEL_COUNT, self.parameters.child('Config', 'Channel count').value())
+        serializer.set(Scope.WAVEFORM_COUNT, self.parameters.child('Config', 'Waveform count').value())
 
         # Serialize channel configurations
         chan_cfgs = []

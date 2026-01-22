@@ -101,7 +101,7 @@ class PollStrategy:
             self.ctx.channel.asyncGet(self._data_callback, self._err_callback, '')
         except pva.PvaException:
             #error because too many asyncGet calls at once.  Ignore
-            logging.getLogger().exception('Failed to poll with PollStrategy.')
+            logging.getLogger().debug('Failed to poll with PollStrategy.')
         
     def start(self):
         """
@@ -171,7 +171,7 @@ class MonitorStrategy:
             self.ctx.channel.stopMonitor()
             self.ctx.channel.setConnectionCallback(None)
         except PvaException:
-            logging.getLogger().exception('Failed to stop Monitor.')
+            logging.getLogger().debug('Failed to stop Monitor.')
             raise
 
 
@@ -343,7 +343,7 @@ class Channel:
             self.channel.asyncGet(data_callback, error_callback, '')
         except pva.PvaException:
             #error because too many asyncGet calls at once.  Ignore
-            logging.getLogger().exception('Failed to get async with Channel.')
+            logging.getLogger().debug('Failed to get async with Channel.')
         
 class DataSource:
     def __init__(self, timer_factory = None):

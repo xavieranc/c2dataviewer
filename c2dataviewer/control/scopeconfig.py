@@ -18,10 +18,12 @@ PVA object viewer utilities
 @author: Guobao Shen <gshen@anl.gov>
 """
 
-DEFAULT_MINIMUM_CHANNELS_NUMBER : int = 4
-DEFAULT_MINIMUM_WAVEFORMS_NUMBER : int = 4
-DEFAULT_MAXIMUM_CHANNELS_NUMBER : int = 10
-DEFAULT_MAXIMUM_WAVEFORM_NUMBER : int = 10
+MINIMUM_CHANNEL_NUMBER : int = 1
+MINIMUM_WAVEFORM_NUMBER : int = 1
+DEFAULT_CHANNEL_NUMBER : int = 4
+DEFAULT_WAVEFORM_NUMBER : int = 4
+MAXIMUM_CHANNEL_NUMBER : int = 10
+MAXIMUM_WAVEFORM_NUMBER : int = 10
 
 class Configure(ScopeConfigureBase):
     """
@@ -81,7 +83,7 @@ class Configure(ScopeConfigureBase):
         :return:
         """
         # get channel counts to display, 4 by default
-        self.counts = self.params.get(Scope.CHANNEL_COUNT, default = DEFAULT_MINIMUM_CHANNELS_NUMBER)
+        self.counts = self.params.get(Scope.CHANNEL_COUNT, default = DEFAULT_CHANNEL_NUMBER)
         channel = []
 
         #Read channel information.  Channel order is
@@ -89,7 +91,7 @@ class Configure(ScopeConfigureBase):
         chan_cfgs = self.params.get_channel_config()
 
         self.counts = max(self.counts, len(chan_cfgs))
-        self.counts = min(self.counts, DEFAULT_MAXIMUM_CHANNELS_NUMBER)
+        self.counts = min(self.counts, MAXIMUM_CHANNEL_NUMBER)
         
         for i in range(self.counts):
             default_cfg = {
@@ -141,7 +143,7 @@ class Configure(ScopeConfigureBase):
 
         :return: The list of dictionnaries. Keys of each dictionnary are parameters (PV, DC offset, ...) as string and values, their corresponding value ('MY:PV', 5, ...).
         '''
-        self.counts_waveforms = self.params.get(Scope.WAVEFORM_COUNT, default = DEFAULT_MINIMUM_WAVEFORMS_NUMBER)
+        self.counts_waveforms = self.params.get(Scope.WAVEFORM_COUNT, default = DEFAULT_WAVEFORM_NUMBER)
         
         waveforms = []
 
@@ -158,7 +160,7 @@ class Configure(ScopeConfigureBase):
         waveforms_configurations.extend(waveforms_configure_lookup_values)
 
         self.counts_waveforms = max(self.counts_waveforms, len(waveforms_configurations))
-        self.counts_waveforms = min(self.counts_waveforms, DEFAULT_MAXIMUM_WAVEFORM_NUMBER)
+        self.counts_waveforms = min(self.counts_waveforms, MAXIMUM_WAVEFORM_NUMBER)
         
         for i in range(self.counts_waveforms):
             default_configuration = {
@@ -222,8 +224,6 @@ class Configure(ScopeConfigureBase):
             {'name' : 'ArrayId', 'type' : 'list', 'limits' : id_value, 'value' : self.default_arrayid},
             {"name": "Start", "type": "bool", "value": start},
             {'name' : 'Start CA', 'type' : 'bool', 'value' : start},
-            {'name' : 'Channels', 'type' : 'int', 'value' : self.counts, 'limits' : [1, 10]},
-            {'name' : 'Waveforms', 'type' : 'int', 'value' : self.counts_waveforms, 'limits' : [1, 10]},
         ]
 
         children.insert(1, child_ca)
@@ -256,12 +256,13 @@ class Configure(ScopeConfigureBase):
                "type": "group",
                "expanded": True,
                "children": [
-                   {"name": "X Axes", "type": "list", "limits": axes, "value": self.default_xaxes},
-                   {"name": "Major Ticks", "type": "int", "value": self.default_major_tick, 'decimals':20},
-                   {"name": "Minor Ticks", "type": "int", "value": self.default_minor_tick, 'decimals':20},
-                   {"name": "Extra Display Fields", "type": "checklist", "value": extra_fields, "limits": extra_fields, "expanded": False},
-                   {"name": "MO Disp Location", "type": "list", "limits": ['top-right', 'bottom-right', 'bottom-left'], "value": mo_display_loc}
-
+                    {"name": "X Axes", "type": "list", "limits": axes, "value": self.default_xaxes},
+                    {"name": "Major Ticks", "type": "int", "value": self.default_major_tick, 'decimals':20},
+                    {"name": "Minor Ticks", "type": "int", "value": self.default_minor_tick, 'decimals':20},
+                    {"name": "Extra Display Fields", "type": "checklist", "value": extra_fields, "limits": extra_fields, "expanded": False},
+                    {"name": "MO Disp Location", "type": "list", "limits": ['top-right', 'bottom-right', 'bottom-left'], "value": mo_display_loc},
+                    {'name' : 'Channel count', 'type' : 'int', 'value' : self.counts, 'limits' : [MINIMUM_CHANNEL_NUMBER, MAXIMUM_CHANNEL_NUMBER]},
+                    {'name' : 'Waveform count', 'type' : 'int', 'value' : self.counts_waveforms, 'limits' : [MINIMUM_WAVEFORM_NUMBER, MAXIMUM_WAVEFORM_NUMBER]},
                    ]
                }
         return cfg

@@ -100,7 +100,7 @@ def imagev(pv, scale=None, noAGC=True):
         label = list(pv.keys())
         
     w = ImageWindow(None)
-    data = DataReceiver(QtCore.QTimer, default=None)
+    data = DataReceiver(QtCore.QTimer)
     w.imageWidget.set_datasource(data)
 
     settings_dialog = ImageSettingsDialog(None)
